@@ -36,7 +36,7 @@ const uint8_t bit8patterns[4] =
 void ws2812_i2s_init()
 {
     samples_data = malloc(8192);
-    temp_data = malloc(1024);
+    temp_data = malloc(4096);
     semaphore = xSemaphoreCreateMutex();
 
     i2s_config_t i2s_config = {
@@ -130,7 +130,7 @@ void ws2812_i2s_setpixels(uint8_t *pixels, int numpixels)
     xSemaphoreGive(semaphore);
 }
 
-#define BLOCKSIZE 1024
+#define BLOCKSIZE 2048
 
 void ws2812_i2s_update()
 {
@@ -140,7 +140,7 @@ void ws2812_i2s_update()
         return;
     }
 
-    memset(temp_data, 0, 1024);
+    memset(temp_data, 0, 4096);
 
     size_t left = samples_left;
     if (left > 0) {
@@ -159,7 +159,7 @@ void ws2812_i2s_update()
 
     left = BLOCKSIZE;
 
-    i2s_write(I2S_NUM, temp_data, left, &written, 10);
+    i2s_write(I2S_NUM, temp_data, left, &written, 100);
 
     // if (written != left) {
     // printf("Wrote %d bytes, %d bytes received (offset %d, samples left %d)\n", left, written, samples_offset, samples_left);

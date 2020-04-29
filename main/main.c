@@ -59,7 +59,8 @@ static void i2sTask(void* pvParameters)
     ws2812_i2s_init();
     while(true) {
         ws2812_i2s_update();
-        vTaskDelay(10);
+        vTaskDelay(1 / portTICK_RATE_MS);
+        // taskYIELD();
     }
 }
 
@@ -143,7 +144,7 @@ static void renderTask(void* pvParameters)
 
         }
 
-        vTaskDelay(10);
+        vTaskDelay(8 / portTICK_RATE_MS);
     }
 }
 
@@ -256,7 +257,7 @@ static void listeningTask(void* pvParameters)
 
     struct timeval read_timeout;
     read_timeout.tv_sec = 0;
-    read_timeout.tv_usec = 10;
+    read_timeout.tv_usec = 1;
     setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &read_timeout, sizeof read_timeout);
 
     r = bind(s, (struct sockaddr *)&si_me, sizeof(struct sockaddr));
@@ -267,10 +268,9 @@ static void listeningTask(void* pvParameters)
         if (r > 0) {
             printf("recvfrom got %d bytes of data %02X %02X %02X %02X %02X\n", r, packetbuf[0], packetbuf[1], packetbuf[2], packetbuf[3], packetbuf[4]);
             parseArtnet((unsigned char *)&packetbuf, r);
-            // } else { 
-            //     vTaskDelay(30);//  / portTICK_PERIOD_MS);
+        } else {
+            vTaskDelay(1 / portTICK_RATE_MS);
         }
-        vTaskDelay(1);
     }
 }
 
