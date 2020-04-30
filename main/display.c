@@ -200,7 +200,7 @@ void ssd1306_sendCommand(unsigned char command)
     i2c_master_write_byte(cmd, 0, ACK_CHECK_EN);
     i2c_master_write_byte(cmd, command, ACK_CHECK_EN);
     i2c_master_stop(cmd);
-    ret = i2c_master_cmd_begin(I2C_NUM_1, cmd, 1000 / portTICK_RATE_MS);
+    ret = i2c_master_cmd_begin(I2C_NUM_0, cmd, 1000 / portTICK_RATE_MS);
     i2c_cmd_link_delete(cmd);
     if (ret != ESP_OK) {
         printf("Failed to send I2C command %02X.\n", command);
@@ -219,7 +219,7 @@ void ssd1306_sendCommandPtr(unsigned char *Command, int len)
         i2c_master_write_byte(cmd, Command[i], ACK_CHECK_EN);
     }
     i2c_master_stop(cmd);
-    ret = i2c_master_cmd_begin(I2C_NUM_1, cmd, 1000 / portTICK_RATE_MS);
+    ret = i2c_master_cmd_begin(I2C_NUM_0, cmd, 1000 / portTICK_RATE_MS);
     i2c_cmd_link_delete(cmd);
     if (ret != ESP_OK) {
         printf("Failed to send I2C command.\n");
@@ -235,7 +235,7 @@ void ssd1306_sendData(unsigned char Data)
     i2c_master_write_byte(cmd, SSD1306_Data_Mode, ACK_CHECK_EN);
     i2c_master_write_byte(cmd, Data, ACK_CHECK_EN);
     i2c_master_stop(cmd);
-    ret = i2c_master_cmd_begin(I2C_NUM_1, cmd, 1000 / portTICK_RATE_MS);
+    ret = i2c_master_cmd_begin(I2C_NUM_0, cmd, 1000 / portTICK_RATE_MS);
     i2c_cmd_link_delete(cmd);
     if (ret != ESP_OK) {
         printf("Failed to send I2C data %02X.\n", Data);
@@ -259,7 +259,7 @@ void ssd1306_sendDataPtr(unsigned char *Data, int len)
         i2c_master_write_byte(cmd, Data[i], ACK_CHECK_EN);
     }
     i2c_master_stop(cmd);
-    ret = i2c_master_cmd_begin(I2C_NUM_1, cmd, 1000 / portTICK_RATE_MS);
+    ret = i2c_master_cmd_begin(I2C_NUM_0, cmd, 1000 / portTICK_RATE_MS);
     i2c_cmd_link_delete(cmd);
     if (ret != ESP_OK) {
         printf("Failed to send I2C data.\n");
@@ -296,7 +296,7 @@ void display_init(uint8_t sda_pin, uint8_t scl_pin) {
 
         printf("Initializing I2C display...\n");
 
-    int i2c_master_port = I2C_NUM_1;
+    int i2c_master_port = I2C_NUM_0;
     i2c_config_t conf;
     conf.mode = I2C_MODE_MASTER;
     conf.sda_io_num = sda_pin;
@@ -511,20 +511,20 @@ void display_init(uint8_t sda_pin, uint8_t scl_pin) {
 
 void display_update(uint8_t *pixels) {
 
-// void ws2812_bitbang_update(uint8_t gpio_num, uint8_t *rgbs, size_t numpixels)
-// gpio_set_direction(gpio_num, GPIO_MODE_OUTPUT);
+    // void ws2812_bitbang_update(uint8_t gpio_num, uint8_t *rgbs, size_t numpixels)
+    // gpio_set_direction(gpio_num, GPIO_MODE_OUTPUT);
 
-// ws2812bitbang_gpiomask = (1 << gpio_num);
+    // ws2812bitbang_gpiomask = (1 << gpio_num);
 
-// taskENTER_CRITICAL(&bb_mux);
+    // taskENTER_CRITICAL(&bb_mux);
 
-// bitbang_send_pixels_800_2(rgbs, rgbs + numpixels * 3, gpio_num);
+    // bitbang_send_pixels_800_2(rgbs, rgbs + numpixels * 3, gpio_num);
 
-// taskEXIT_CRITICAL(&bb_mux);
+    // taskEXIT_CRITICAL(&bb_mux);
 
     // ssd1306_sendDataPtr((unsigned char *)&ssd1306_buffer, 128*32/8);
 
-    unsigned char buf1[] = { 
+    unsigned char buf1[] = {
         SSD1306_PAGEADDR,
         0,                         // Page start address
         0xFF,                      // Page end (not really, but works here)
@@ -533,10 +533,11 @@ void display_update(uint8_t *pixels) {
     ssd1306_sendCommandPtr((unsigned char *)&buf1, 5);
     ssd1306_sendCommand(128 - 1); // Column end address
 
-    for(int i=0; i<128*32/8; i++) {
-        ssd1306_buffer[i] = (rand() + i) & 255;
-    }
+    memcpy(ssd1306_buffer, pixels, 128*32/8);
 
+    // for(int i=0; i<128*32/8; i++) {
+    //     ssd1306_buffer[i] = (rand() + i) & 255;
+    // }
 
     ssd1306_buffer[0] = font8x8[48 * 8 + 0];
     ssd1306_buffer[1] = font8x8[48 * 8 + 1];
@@ -546,6 +547,15 @@ void display_update(uint8_t *pixels) {
     ssd1306_buffer[5] = font8x8[48 * 8 + 5];
     ssd1306_buffer[6] = font8x8[48 * 8 + 6];
     ssd1306_buffer[7] = font8x8[48 * 8 + 7];
+
+    ssd1306_buffer[8] = font8x8[47 * 8 + 0];
+    ssd1306_buffer[9] = font8x8[47 * 8 + 1];
+    ssd1306_buffer[10] = font8x8[47 * 8 + 2];
+    ssd1306_buffer[11] = font8x8[47 * 8 + 3];
+    ssd1306_buffer[12] = font8x8[47 * 8 + 4];
+    ssd1306_buffer[13] = font8x8[47 * 8 + 5];
+    ssd1306_buffer[14] = font8x8[47 * 8 + 6];
+    ssd1306_buffer[15] = font8x8[47 * 8 + 7];
 
     ssd1306_sendDataPtr((unsigned char *)&ssd1306_buffer, 128 * 4);
 

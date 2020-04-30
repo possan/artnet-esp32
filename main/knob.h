@@ -8,6 +8,9 @@
 extern "C" {
 #endif
 
+extern uint8_t clickcounter;
+extern uint8_t turncounter;
+
 void knob_init(uint8_t pin_a, uint8_t pin_b, uint8_t pin_c);
 uint8_t knob_read();
 

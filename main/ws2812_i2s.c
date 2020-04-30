@@ -7,6 +7,7 @@
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
 #include "driver/i2s.h"
+#include "esp_heap_caps.h"
 #include <string.h>
 #include <malloc.h>
 
@@ -19,11 +20,11 @@
 static QueueHandle_t i2s_event_queue;
 static SemaphoreHandle_t semaphore;
 uint8_t *samples_data;
-uint8_t *temp_data;
-int samples_left;
-int samples_offset;
-static int ws2812_dummy_counter = 0;
-bool ws2812_dirty = true;
+// uint8_t *temp_data;
+int16_t samples_left;
+int16_t samples_offset;
+// static int ws2812_dummy_counter = 0;
+// bool ws2812_dirty = true;
 
 const uint8_t bit8patterns[4] =
 {
@@ -35,8 +36,8 @@ const uint8_t bit8patterns[4] =
 
 void ws2812_i2s_init()
 {
-    samples_data = malloc(8192);
-    temp_data = malloc(4096);
+    samples_data = heap_caps_malloc(8192, MALLOC_CAP_DMA);
+    // temp_data = heap_caps_malloc(4096, MALLOC_CAP_DMA);
     semaphore = xSemaphoreCreateMutex();
 
     i2s_config_t i2s_config = {
@@ -83,11 +84,6 @@ void ws2812_i2s_setpixels(uint8_t *pixels, int numpixels)
         samples_data[o++] = 0;
     }
 
-    // samples_data[o++] = 0b11110000; // B
-    // samples_data[o++] = 0b11100000; // A
-    // samples_data[o++] = 0b11111100; // D
-    // samples_data[o++] = 0b11111000; // C
-
     // every bit is 1.25uS, every byte is ~10uS
     for( i=0; i<numpixels; i++) {
         uint8_t r = pixels[i * 3 + 0];
@@ -95,22 +91,22 @@ void ws2812_i2s_setpixels(uint8_t *pixels, int numpixels)
         uint8_t b = pixels[i * 3 + 2];
 
         // G
-        samples_data[o++] = bit8patterns[(g >> 2) & 3];
         samples_data[o++] = bit8patterns[(g >> 0) & 3];
-        samples_data[o++] = bit8patterns[(g >> 6) & 3];
+        samples_data[o++] = bit8patterns[(g >> 2) & 3];
         samples_data[o++] = bit8patterns[(g >> 4) & 3];
+        samples_data[o++] = bit8patterns[(g >> 6) & 3];
 
         // R
-        samples_data[o++] = bit8patterns[(r >> 2) & 3];
         samples_data[o++] = bit8patterns[(r >> 0) & 3];
-        samples_data[o++] = bit8patterns[(r >> 6) & 3];
+        samples_data[o++] = bit8patterns[(r >> 2) & 3];
         samples_data[o++] = bit8patterns[(r >> 4) & 3];
+        samples_data[o++] = bit8patterns[(r >> 6) & 3];
 
         // B
-        samples_data[o++] = bit8patterns[(b >> 2) & 3];
         samples_data[o++] = bit8patterns[(b >> 0) & 3];
-        samples_data[o++] = bit8patterns[(b >> 6) & 3];
+        samples_data[o++] = bit8patterns[(b >> 2) & 3];
         samples_data[o++] = bit8patterns[(b >> 4) & 3];
+        samples_data[o++] = bit8patterns[(b >> 6) & 3];
     }
 
     // 50uS delay...
@@ -130,7 +126,7 @@ void ws2812_i2s_setpixels(uint8_t *pixels, int numpixels)
     xSemaphoreGive(semaphore);
 }
 
-#define BLOCKSIZE 2048
+#define BLOCKSIZE 1024
 
 void ws2812_i2s_update()
 {
@@ -140,7 +136,9 @@ void ws2812_i2s_update()
         return;
     }
 
-    memset(temp_data, 0, 4096);
+    uint8_t *temp_data = heap_caps_malloc(2048, MALLOC_CAP_DMA);
+
+    memset(temp_data, 0, 2048);
 
     size_t left = samples_left;
     if (left > 0) {
@@ -152,8 +150,6 @@ void ws2812_i2s_update()
         memcpy(temp_data, samples_data + samples_offset, left);
     }
 
-    int o = 0;
-
     size_t written = 0;
     // i2s_zero_dma_buffer(I2S_NUM);
 
@@ -161,9 +157,9 @@ void ws2812_i2s_update()
 
     i2s_write(I2S_NUM, temp_data, left, &written, 100);
 
-    // if (written != left) {
-    // printf("Wrote %d bytes, %d bytes received (offset %d, samples left %d)\n", left, written, samples_offset, samples_left);
-    // }
+    if (written != left) {
+        printf("Wrote %d bytes, %d bytes received (offset %d, samples left %d)\n", left, written, samples_offset, samples_left);
+    }
 
     samples_left -= written;
 
@@ -177,6 +173,8 @@ void ws2812_i2s_update()
     }
 
     samples_offset += written;
+
+    heap_caps_free(temp_data);
 
     xSemaphoreGive(semaphore);
 }

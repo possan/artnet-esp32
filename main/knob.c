@@ -1,574 +1,124 @@
 #include <string.h>
-// #include "ws2812_i2s.h"
-// #include "i2s_dma/i2s_dma.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
 
-// #ifdef ESP_PLATFORM
-// #include "soc/gpio_struct.h"
-// #else
-// #include "esp8266/gpio_struct.h"
-// #endif
-
+#include "freertos/queue.h"
 #include "driver/gpio.h"
 
-// #define WS2812_SHORT_DELAY() for (volatile uint32_t __j = 1; __j > 0; __j--)
-// #define WS2812_LONG_DELAY()  for (volatile uint32_t __j = 3; __j > 0; __j--)
-
-// static const char *TAG = "ws2812_bitbang";
-
-// #define F_CPU 160000000
-
-// // 1s =     F_CPU / 1
-// // 1ms =    F_CPU / 1000
-// // 1us =    F_CPU / 1000000
-// // 0.1us =  F_CPU / 10000000
-// // 300ns = F_CPU / (1000000 * 0.3)
-// // 900ns = F_CPU / (1000000 * 0.9)
-// #define CYCLES_800_T0H  (F_CPU / 2500000) // 0.4us
-// #define CYCLES_800_T1H  (F_CPU / 1250000) // 0.8us
-// #define CYCLES_800      (F_CPU /  800000) // 1.25us per bit
-
-
-// // 80mhz = 12.5ns period
-// // (1000mhz = 1ns period)
-
-// //
-// // 0: 0.3us + 0.9us
-// // 1: 0.9us + 0.3us
-// //
-// // 0.3us = 300ns = 
-// // 0.9us = 900ns = 
-// //
-
-// #define CYCLES2_800_T0L  (F_CPU * 3 / 10000000) // 0.3us
-// #define CYCLES2_800_T1L  (F_CPU * 9 / 10000000) // 0.9us
-
-// #define CYCLES2_800_T0H  (F_CPU * 9 / 10000000) // 0.9us
-// #define CYCLES2_800_T1H  (F_CPU * 3 / 10000000) // 0.3us
-
-
-
-// // #define CYCLES2_800      (F_CPU /  800000) // 1.25us per bit
-
-// // inline uint32_t _getCycleCount()
-// // {
-// //     uint32_t ccount;
-// //     __asm__ __volatile__("rsr %0,ccount":"=a" (ccount));
-// //     return ccount;
-// // }
-
-// volatile static uint16_t ws2812bitbang_gpiomask;
-
-
-// // // from https://github.com/Makuna/NeoPixelBus/blob/e13f9599c80bc5872f614d7cc184547b11aa225c/src/internal/NeoPixelEsp.c
-// // void bitbang_send_pixels_800(uint8_t* pixels, uint8_t* end, uint8_t pin)
-// // {
-// //     const uint32_t pinRegister = 1 << pin;
-// //     uint8_t mask;
-// //     uint8_t subpix;
-// //     uint32_t cyclesStart;
-
-// //     // trigger emediately
-// //     cyclesStart = _getCycleCount() - CYCLES_800;
-// //     do {
-// //         subpix = *pixels++;
-// //         for (mask = 0x80; mask != 0; mask >>= 1)
-// //         {
-// //             // do the checks here while we are waiting on time to pass
-// //             uint32_t cyclesBit = ((subpix & mask)) ? CYCLES_800_T1H : CYCLES_800_T0H;
-// //             uint32_t cyclesNext = cyclesStart;
-
-// //             // after we have done as much work as needed for this next bit
-// //             // now wait for the HIGH
-// //             do
-// //             {
-// //                 // cache and use this count so we don't incur another 
-// //                 // instruction before we turn the bit high
-// //                 cyclesStart = _getCycleCount();
-// //             } while ((cyclesStart - cyclesNext) < CYCLES_800);
-
-// //             GPIO.out_w1ts = pinRegister;
-
-// //             // wait for the LOW
-// //             do {
-// //                 cyclesNext = _getCycleCount();
-// //             } while ((cyclesNext - cyclesStart) < cyclesBit);
-
-// //             GPIO.out_w1tc = pinRegister;
-// //         }
-// //     } while (pixels < end);
-// // }
-
-// // WS2812 Timings for 80mhz
-// // 72 + 24 cycles
-
-// inline void bitbang_send_pixels_800_2_longdelay() {
-//     // 72 cycles / nops - overhead
-
-//     // 0
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-
-//     // 10
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-
-//     // 20
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-
-//     // 30
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-
-//     // 40
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-
-//     // 50
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-
-//     // 60
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-
-//     // less overhead
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     // __asm__ __volatile__("nop");
-//     // __asm__ __volatile__("nop");
-//     // __asm__ __volatile__("nop");
-//     // __asm__ __volatile__("nop");
-//     // __asm__ __volatile__("nop");
-//     // __asm__ __volatile__("nop");
-//     // __asm__ __volatile__("nop");
-//     // __asm__ __volatile__("nop");
-
-//     // esp32 additionals:
-
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-
-
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-// }
-
-// inline void bitbang_send_pixels_800_2_shortdelay() {
-//     // 24 cycles / nops - overhead
-
-//     // less overhead
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     // __asm__ __volatile__("nop");
-//     // __asm__ __volatile__("nop");
-//     // __asm__ __volatile__("nop");
-//     // __asm__ __volatile__("nop");
-//     // __asm__ __volatile__("nop");
-//     // __asm__ __volatile__("nop");
-//     // __asm__ __volatile__("nop");
-//     // __asm__ __volatile__("nop");
-
-//     // 0
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-
-//     // 10
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-
-
-
-
-//     // esp32 additionals:
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-
-
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-//     __asm__ __volatile__("nop");
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// }
-
-// void bitbang_send_pixels_800_2(uint8_t* pixels, uint8_t* end, uint8_t pin)
-// {
-//     const uint32_t pinRegister = 1 << pin;
-//     uint8_t mask;
-//     uint8_t channel;
-
-//     do {
-//         channel = *pixels++;
-//         for (mask = 0x80; mask != 0; mask >>= 1)
-//         {
-//             if (channel & mask) {
-//                 GPIO.out_w1ts = pinRegister;
-//                 bitbang_send_pixels_800_2_longdelay();
-//                 GPIO.out_w1tc = pinRegister;
-//                 bitbang_send_pixels_800_2_shortdelay();
-//             } else {
-//                 GPIO.out_w1ts = pinRegister;
-//                 bitbang_send_pixels_800_2_shortdelay();
-//                 GPIO.out_w1tc = pinRegister;
-//                 bitbang_send_pixels_800_2_longdelay();
-//             }
-//         }
-//     } while (pixels < end);
-// }
-
-void knob_init(uint8_t pin_a, uint8_t pin_b, uint8_t pin_c) {
-
-    // do some measurements.
-
-    // volatile uint32_t cyclecounter1;
-    // volatile uint32_t cyclecounter2;
-    // volatile uint32_t cyclecountercount;
-
-    // ESP_LOGI(TAG, "Compiletime WS2812 Timings");
-    // ESP_LOGI(TAG, "0: %u + %u cycles", CYCLES2_800_T0H, CYCLES2_800_T0L);
-    // ESP_LOGI(TAG, "1: %u + %u cycles", CYCLES2_800_T1H, CYCLES2_800_T1L);
-
-    // taskENTER_CRITICAL();
-
-    // cyclecounter1 = _getCycleCount();
-    // for(volatile int i=100; i>=0; i--) {
-    //     cyclecounter2 = _getCycleCount();
-    // }
-
-    // taskEXIT_CRITICAL();
-
-    // ESP_LOGI(TAG, "WS2812 Bitbang init");
-    // ESP_LOGI(TAG, "Cycle counter 1: %u", cyclecounter1);
-    // ESP_LOGI(TAG, "Cycle counter 2: %u", cyclecounter2);
-
-    // cyclecountercount = (cyclecounter2 - cyclecounter1) / 100;
-
-    // ESP_LOGI(TAG, "Cycles needed for measuring cycle counter: %u", cyclecountercount);
-
-
-
-    // taskENTER_CRITICAL();
-
-    // cyclecounter1 = _getCycleCount();
-    // for(volatile int i=10000; i>=0; i--) {
-    //     __asm__ __volatile__("nop");
-    // }
-    // cyclecounter2 = _getCycleCount();
-
-    // taskEXIT_CRITICAL();
-
-
-    // ESP_LOGI(TAG, "Nop cycle counter 1: %u", cyclecounter1);
-    // ESP_LOGI(TAG, "Nop cycle counter 2: %u", cyclecounter2);
-
-
+#define POSITIVE 0x1000
+#define BIT_A 1
+#define BIT_B 2
+
+#define ESP_INTR_FLAG_DEFAULT 0
+
+static xQueueHandle gpio_evt_queue = NULL;
+int16_t clickcounter = 0;
+int16_t turncounter = 0;
+uint8_t turnstate = 0;
+uint8_t lastturnstate = 0;
+uint8_t clickstate = 0;
+uint8_t lastclickstate = 0;
+uint8_t knob_pin_a = 0;
+uint8_t knob_pin_b = 0;
+uint8_t knob_pin_c = 0;
+
+static void IRAM_ATTR gpio_isr_handler(void* arg)
+{
+    uint32_t gpio_num = (uint32_t) arg;
+    uint8_t level = gpio_get_level(gpio_num);
+    if (level) {
+        gpio_num |= POSITIVE;
+    }
+    xQueueSendFromISR(gpio_evt_queue, &gpio_num, NULL);
 }
 
-// static portMUX_TYPE bb_mux = portMUX_INITIALIZER_UNLOCKED;
 
+void knob_init(uint8_t pin_a, uint8_t pin_b, uint8_t pin_c) {
+    knob_pin_a = pin_a;
+    knob_pin_b = pin_b;
+    knob_pin_c = pin_c;
 
+    gpio_set_direction(pin_a, GPIO_MODE_INPUT);
+    gpio_set_direction(pin_b, GPIO_MODE_INPUT);
+    gpio_set_direction(pin_c, GPIO_MODE_INPUT);
+
+    gpio_evt_queue = xQueueCreate(50, sizeof(uint32_t));
+
+    gpio_set_intr_type(pin_a, GPIO_INTR_ANYEDGE);
+    gpio_set_intr_type(pin_b, GPIO_INTR_ANYEDGE);
+    gpio_set_intr_type(pin_c, GPIO_INTR_ANYEDGE);
+
+    gpio_install_isr_service(ESP_INTR_FLAG_DEFAULT);
+
+    gpio_isr_handler_add(pin_a, gpio_isr_handler, (void*) pin_a);
+    gpio_isr_handler_add(pin_b, gpio_isr_handler, (void*) pin_b);
+    gpio_isr_handler_add(pin_c, gpio_isr_handler, (void*) pin_c);
+}
 
 uint8_t knob_read() {
+    uint32_t io_num = 0;
+
+    if(xQueueReceive(gpio_evt_queue, &io_num, portMAX_DELAY)) {
+        // printf("GPIO[%d] intr, val: %d\n", io_num, gpio_get_level(io_num));
+        if (io_num >= POSITIVE) {
+
+            if ((io_num & 255) == knob_pin_a) {
+                turnstate |= BIT_A;
+            }
+            if ((io_num & 255) == knob_pin_b) {
+                turnstate |= BIT_B;
+            }
+            if ((io_num & 255) == knob_pin_c) {
+                clickstate = 1;
+            }
+        } else {
+
+            if (io_num == knob_pin_a) {
+                turnstate &= ~BIT_A;
+            }
+            if (io_num == knob_pin_b) {
+                turnstate &= ~BIT_B;
+            }
+            if (io_num == knob_pin_c) {
+                clickstate = 0;
+            }
+        }
+
+        // printf("GPIO Interrupt, io_num=%d, turnstate=%d, clickstate=%d, clicks=%d, turn=%d\n", io_num, turnstate, clickstate, clickcounter, turncounter);
+
+        if (turnstate != lastturnstate) {
+            printf("Knob: Turned %d -> %d.\n", lastturnstate, turnstate);
+            // 0->2, 2->3, 3->1, 1-> 0
+            // if ()
+
+            // 3 -> 1 = LEFT?
+            // 3 -> 2 = RIGHT?
+
+            if (turnstate == 1 && lastturnstate == 3) {
+                turncounter --;
+                printf("Knob: Turn left, turn counter = %d\n", turncounter);
+            }
+            if (turnstate == 2 && lastturnstate == 3) {
+                turncounter ++;
+                printf("Knob: Turn right, turn counter = %d\n", turncounter);
+            }
+
+            lastturnstate = turnstate;
+        }
+
+        if (clickstate != lastclickstate) {
+            if (clickstate) {
+                printf("Knob: Pressed, click counter = %d\n", clickcounter);
+            } else {
+                clickcounter ++;
+                printf("Knob: Released, click counter = %d\n", clickcounter);
+            }
+            lastclickstate = clickstate;
+        }
+    }
+
     return 0;
-
-// void ws2812_bitbang_update(uint8_t gpio_num, uint8_t *rgbs, size_t numpixels)
-// gpio_set_direction(gpio_num, GPIO_MODE_OUTPUT);
-
-// ws2812bitbang_gpiomask = (1 << gpio_num);
-
-// taskENTER_CRITICAL(&bb_mux);
-
-// bitbang_send_pixels_800_2(rgbs, rgbs + numpixels * 3, gpio_num);
-
-// taskEXIT_CRITICAL(&bb_mux);
 }
 

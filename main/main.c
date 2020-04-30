@@ -24,7 +24,9 @@
 #include "ws2812_bitbang.h"
 #include "display.h"
 #include "knob.h"
+#include <math.h>
 
+#define STRIPLENGTH 140
 #define NUMPIXELS 2048
 #define MAXPIXELS 2048
 #define FIRSTUNIVERSE 0
@@ -75,11 +77,11 @@ static void renderTask(void* pvParameters)
         pixeldmxoffset[i] = (512 * page) + (3 * inpage);
     }
 
-    pixelsused = 60;
+    pixelsused = STRIPLENGTH;
 
-    for(int i=0; i<pixelsused; i++) {
-        pixelbuffer[i * 3 + 2] = i * 4;
-    }
+    // for(int i=0; i<pixelsused; i++) {
+    //     pixelbuffer[i * 3 + 2] = i * 4;
+    // }
 
     dirtypixels = true;
 
@@ -102,6 +104,13 @@ static void renderTask(void* pvParameters)
             // pixelbuffer2[1] = debug ? 255 : 0;
             // pixelbuffer2[2] = debug ? 255 : 0;
             // debug = 1 - debug;
+
+            // o = 0;
+            // for(int i=0; i<pixelsused; i++) {
+            //     o ++;
+            //     o ++;
+            //     pixelbuffer[o ++] = round(128.0f + 127.0f * sin((float)(i + renderframes) / 20.0f));
+            // }
 
             int crcnow = crc16_le(0, pixelbuffer, pixelsused * 3);
             if (crcnow != lastframecrc) {
@@ -223,8 +232,8 @@ static void parseArtnet(unsigned char *buffer, int len) {
     }
 
     pixelsused = renderlength / 3;
-    if (pixelsused > 60) {
-        pixelsused = 60;
+    if (pixelsused > STRIPLENGTH) {
+        pixelsused = STRIPLENGTH;
     }
 
     uint32_t T = xTaskGetTickCount() * portTICK_PERIOD_MS;
@@ -339,6 +348,7 @@ void wifi_init_sta()
 }
 
 static char freertosstats[300] = { 0, };
+static uint8_t displaydata[1024] = { 0, };
 
 static void debugTask(void* pvParameters)
 {
@@ -364,21 +374,58 @@ static void debugTask(void* pvParameters)
     }
 }
 
-// static void debugTask2(void* pvParameters)
-// {
-//     while(true) {
-//         ESP_LOGI(TAG, "Pixelbuffer %02X%02X%02X %02X%02X%02X %02X%02X%02X %02X%02X%02X %02X%02X%02X %02X%02X%02X %02X%02X%02X %02X%02X%02X ",
-//             pixelbuffer[0], pixelbuffer[1], pixelbuffer[2],
-//             pixelbuffer[3], pixelbuffer[4], pixelbuffer[5],
-//             pixelbuffer[6], pixelbuffer[7], pixelbuffer[8],
-//             pixelbuffer[9], pixelbuffer[10], pixelbuffer[11],
-//             pixelbuffer[12], pixelbuffer[13], pixelbuffer[14],
-//             pixelbuffer[15], pixelbuffer[16], pixelbuffer[17],
-//             pixelbuffer[18], pixelbuffer[19], pixelbuffer[20],
-//             pixelbuffer[21], pixelbuffer[22], pixelbuffer[23]);
-//         vTaskDelay(32 / portTICK_RATE_MS);
-//     }
-// }
+static void displayTask(void* pvParameters)
+{
+    display_init(4, 5);
+
+    while(true) {
+        // vTaskGetRunTimeStats((char *)&freertosstats);
+        // ESP_LOGI(TAG, "FreeRTOS Stats:\n%s", freertosstats);
+        // ESP_LOGI(TAG, "Artnet stats: %u dmx frames received (%u bytes) over %d ms (~%1.1f fps).", dmxframesreceived, dmxbytesreceived, dmxduration, dmxframerate);
+        // ESP_LOGI(TAG, "Rendered frames: %u, %d/%d pixels length received, blit time %d ms, frame time %d ms", renderframes, renderlength, NUMPIXELS, rendertime, frametime);
+        // ESP_LOGI(TAG, "Pixelbuffer %02X%02X%02X %02X%02X%02X %02X%02X%02X",
+        //     pixelbuffer[0], pixelbuffer[1], pixelbuffer[2],
+        //     pixelbuffer[3], pixelbuffer[4], pixelbuffer[5],
+        //     pixelbuffer[6], pixelbuffer[7], pixelbuffer[8]);
+        // printf("\n\n\n\n");
+
+        for(int i=0; i<1024; i++) {
+            displaydata[i] = 0;// 1 << (rand() & 7);
+        }
+
+        for(int i=0; i<16; i++) {
+            displaydata[32 + i] = clickcounter;
+            displaydata[64 + i] = turncounter;
+        }
+
+        display_update(&displaydata);
+
+        taskYIELD();
+        vTaskDelay(30 / portTICK_RATE_MS);
+    }
+}
+
+static void knobTask(void* pvParameters)
+{
+    knob_init(17, 18, 19);
+
+    while(true) {
+        // ESP_LOGI(TAG, "Pixelbuffer %02X%02X%02X %02X%02X%02X %02X%02X%02X %02X%02X%02X %02X%02X%02X %02X%02X%02X %02X%02X%02X %02X%02X%02X ",
+        //     pixelbuffer[0], pixelbuffer[1], pixelbuffer[2],
+        //     pixelbuffer[3], pixelbuffer[4], pixelbuffer[5],
+        //     pixelbuffer[6], pixelbuffer[7], pixelbuffer[8],
+        //     pixelbuffer[9], pixelbuffer[10], pixelbuffer[11],
+        //     pixelbuffer[12], pixelbuffer[13], pixelbuffer[14],
+        //     pixelbuffer[15], pixelbuffer[16], pixelbuffer[17],
+        //     pixelbuffer[18], pixelbuffer[19], pixelbuffer[20],
+        //     pixelbuffer[21], pixelbuffer[22], pixelbuffer[23]);
+
+        knob_read();
+
+        taskYIELD();
+        // vTaskDelay(5 / portTICK_RATE_MS);
+    }
+}
 
 void app_main()
 {
@@ -396,5 +443,6 @@ void app_main()
     xTaskCreatePinnedToCore(&i2sTask, "i2s", 3500, NULL, 2 | portPRIVILEGE_BIT, NULL, portNUM_PROCESSORS - 1);
     xTaskCreatePinnedToCore(&renderTask, "render", 2500, NULL, 30, NULL, 0);
     xTaskCreatePinnedToCore(&debugTask, "debug", 2500, NULL, 99, NULL, 0);
-    // xTaskCreatePinnedToCore(&debugTask2, "debug2", 2500, NULL, 99, NULL, 0);
+    xTaskCreatePinnedToCore(&knobTask, "knob", 2500, NULL, 99, NULL, 0);
+    xTaskCreatePinnedToCore(&displayTask, "display", 2500, NULL, 99, NULL, 0);
 }
