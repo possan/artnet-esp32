@@ -1,4 +1,3 @@
-
 #ifndef __FX_H__
 #define __FX_H__
 
@@ -10,25 +9,27 @@ extern "C" {
 #endif
 
 typedef struct {
-    uint32_t opacity;
-    float offset;
-    uint32_t color[3];
-    uint32_t radius;
-    uint32_t feather_left;
-    uint32_t feather_right;
-    float speed;
-    uint32_t repeat;
-    float gamma;
+    int32_t opacity;
+    int32_t offset;
+    int32_t color[3];
+    int32_t radius;
+    int32_t feather_left;
+    int32_t feather_right;
+    int32_t speed;
+    int32_t repeat;
+    int32_t gamma;
 } FxLayerSettings;
 
 typedef struct {
-    uint32_t time_offset;
-    uint32_t num_leds;
+    int32_t time_offset;
+    int32_t num_leds;
+    int32_t opacity;
     FxLayerSettings layer[4];
 } FxSettings;
 
-void fx_render_layer(FxLayerSettings *layer, float time, uint8_t *rgb, int len);
-void fx_render(FxSettings *fx, float time, uint8_t *rgb, int len);
+void fx_render_layer(FxLayerSettings *layer, uint32_t time, uint8_t *rgb, int num_leds, uint8_t *temp, int opacity);
+void fx_render(FxSettings *fx, uint32_t time, uint8_t *rgb, int max_leds, uint8_t *temp);
+bool fx_set_osc_property(FxSettings *fx, char *property, float value);
 
 #ifdef	__cplusplus
 }

@@ -62,6 +62,7 @@ static const char *TAG = "esp-artnet";
 static uint16_t pixeldmxoffset[MAXPIXELS] = { 0, };
 static uint8_t pixelbuffer[MAXPIXELS * 3] = { 0, };
 static uint8_t pixelbuffer2[MAXPIXELS * 3] = { 0, };
+static uint8_t tempbuffer[MAXPIXELS] = { 0, };
 static uint8_t dirtypixels = true;
 static bool run_demo = true;
 static uint32_t reset_time = 0;
@@ -106,23 +107,36 @@ float osc_fader4 = 0.0;
 uint32_t next_persist = 0;
 uint8_t state_dirty = false;
 
-// static void i2sTask(void* pvParameters)
-// {
-//     uint32_t lastframe = xTaskGetTickCount();
-//     // ws2812_i2s_init();
-//     comm_spi_init()
-//     while(true) {
-//         // ws2812_i2s_update();
-//         vTaskDelay(1 / portTICK_RATE_MS);
-//         // taskYIELD();
-//     }
-// }
-
 void load_or_default_appstate() {
     nvs_handle_t my_handle;
     esp_err_t err;
 
     state_dirty = false;
+
+    // default fx prameters
+
+    memset(&fx, 0, sizeof(FxSettings));
+    fx.num_leds = 40;
+    fx.opacity = 100;
+
+    fx.layer[0].offset = 0;
+    fx.layer[0].opacity = 100;
+    fx.layer[0].color[0] = 255;
+    fx.layer[0].radius = 3;
+    fx.layer[0].repeat = 1;
+    fx.layer[0].feather_left = 3;
+    fx.layer[0].feather_right = 10;
+    fx.layer[0].opacity = 100;
+    fx.layer[0].speed = 1000;
+
+    fx.layer[1].offset = 33;
+    fx.layer[1].opacity = 33;
+    fx.layer[1].color[0] = 255;
+    fx.layer[1].color[1] = 255;
+    fx.layer[1].color[2] = 255;
+    fx.layer[1].radius = 1;
+    fx.layer[1].repeat = 3;
+    fx.layer[1].speed = 900;
 
     err = nvs_open(STORAGE_NAMESPACE, NVS_READWRITE, &my_handle);
     if (err != ESP_OK) {
@@ -211,12 +225,14 @@ static void renderTask(void* pvParameters)
 
         if (dirtypixels) {
 
+            uint32_t T2 = T - reset_time;
+
+            fx_render(&fx, T2, (uint8_t*)&pixelbuffer2, pixelsused, (uint8_t*)&tempbuffer);
 
             // pixelbuffer2[0] = debug ? 255 : 0;
             // pixelbuffer2[1] = debug ? 255 : 0;
             // pixelbuffer2[2] = debug ? 255 : 0;
             // debug = 1 - debug;
-
             // o = 0;
             // for(int i=0; i<pixelsused; i++) {
             //     o ++;
@@ -224,13 +240,13 @@ static void renderTask(void* pvParameters)
             //     pixelbuffer[o ++] = round(128.0f + 127.0f * sin((float)(i + renderframes) / 20.0f));
             // }
 
-            int crcnow = crc16_le(0, pixelbuffer, pixelsused * 3);
+            int crcnow = crc16_le(0, pixelbuffer2, pixelsused * 3);
 
-            if (run_demo) {
-                // always render if demo.
-                crcnow = 42;
-                lastframecrc = 0;
-            }
+            // if (run_demo) {
+            //     // always render if demo.
+            //     crcnow = 42;
+            //     lastframecrc = 0;
+            // }
 
             if (crcnow != lastframecrc) {
                 lastframecrc = crcnow;
@@ -249,36 +265,37 @@ static void renderTask(void* pvParameters)
                     pixelbuffer[21], pixelbuffer[22], pixelbuffer[23]);
                 */
 
-                unsigned char *outptr = (unsigned char *)&pixelbuffer2;
-                for(int i=0; i<pixelsused; i++) {
-                    uint16_t o = pixeldmxoffset[i];
-                    unsigned char *inptr = (unsigned char *)&pixelbuffer + o;
-                    outptr[0] = inptr[0];
-                    outptr[1] = inptr[1];
-                    outptr[2] = inptr[2];
-                    outptr += 3;
-                }
 
-                if (run_demo) {
-                    memset(pixelbuffer2, 0, pixelsused * 3);
+                // unsigned char *outptr = (unsigned char *)&pixelbuffer2;
+                // for(int i=0; i<pixelsused; i++) {
+                //     uint16_t o = pixeldmxoffset[i];
+                //     unsigned char *inptr = (unsigned char *)&pixelbuffer + o;
+                //     outptr[0] = inptr[0];
+                //     outptr[1] = inptr[1];
+                //     outptr[2] = inptr[2];
+                //     outptr += 3;
+                // }
 
-                    int t0 = (int)(osc_fader1 * 40.0f);
-                    int t1 = 255 - (int)(osc_fader2 * 255.0f);
-                    int t2 = 255 - (int)(osc_fader3 * 255.0f);
-                    int t3 = 255 - (int)(osc_fader4 * 255.0f);
+                // if (run_demo) {
+                //     memset(pixelbuffer2, 0, pixelsused * 3);
 
-                    for(int j=0; j<NUMSTRIPS; j++) {
-                        for(int i=0; i<STRIPLENGTH; i++) {
-                            int x = (i + j + (demoframe + t0)) % 20;
-                            int o = (j * STRIPLENGTH + i) * 3;
-                            if (x == 0) pixelbuffer2[o + 0] = t1;
-                            if (x == 1) pixelbuffer2[o + 1] = t2;
-                            if (x == 2) pixelbuffer2[o + 2] = t3;
-                        }
-                    }
+                //     int t0 = (int)(osc_fader1 * 40.0f);
+                //     int t1 = 255 - (int)(osc_fader2 * 255.0f);
+                //     int t2 = 255 - (int)(osc_fader3 * 255.0f);
+                //     int t3 = 255 - (int)(osc_fader4 * 255.0f);
 
-                    demoframe ++;
-                }
+                //     for(int j=0; j<NUMSTRIPS; j++) {
+                //         for(int i=0; i<STRIPLENGTH; i++) {
+                //             int x = (i + j + (demoframe + t0)) % 20;
+                //             int o = (j * STRIPLENGTH + i) * 3;
+                //             if (x == 0) pixelbuffer2[o + 0] = t1;
+                //             if (x == 1) pixelbuffer2[o + 1] = t2;
+                //             if (x == 2) pixelbuffer2[o + 2] = t3;
+                //         }
+                //     }
+
+                //     demoframe ++;
+                // }
 
                 // ws2812_i2s_setpixels(pixelbuffer2, pixelsused);
 
@@ -288,12 +305,19 @@ static void renderTask(void* pvParameters)
 
                     o = (1 * STRIPLENGTH + i) * 3;
                     leds1[i] = pixelbuffer2[o+2] + (pixelbuffer2[o+1] << 8) + (pixelbuffer2[o+0] << 16);
+
+                    o = (1 * STRIPLENGTH + i) * 3;
+                    leds2[i] = pixelbuffer2[o+2] + (pixelbuffer2[o+1] << 8) + (pixelbuffer2[o+0] << 16);
+
+                    o = (1 * STRIPLENGTH + i) * 3;
+                    leds3[i] = pixelbuffer2[o+2] + (pixelbuffer2[o+1] << 8) + (pixelbuffer2[o+0] << 16);
                 }
 
-                for(int i=0; i<8; i++) {
-                    leds0[i] = 0;
-                }
-                leds0[rand() & 7] = rand() & 255;
+                leds0[rand() & 3] = rand() & 255;
+                leds1[rand() & 3] = rand() & 255;
+                leds2[rand() & 3] = rand() & 255;
+                leds3[rand() & 3] = rand() & 255;
+
                 FastLED.show();
 
                 // comm_spi_push(pixelbuffer2, pixelsused);
@@ -410,53 +434,77 @@ static void handleOsc(tosc_message *osc) {
     // sendosc 192.168.1.180 9000 /1/fader1 f 0.5
 
     const char *addr = tosc_getAddress(osc);
+    tosc_getFormat(osc);
 
-    state_dirty = true;
-    next_persist = (xTaskGetTickCount() * portTICK_PERIOD_MS) + 5000;
-
-    if (strcmp(addr, "/1/fader1") == 0) {
-        tosc_getFormat(osc);
-        osc_fader1 = tosc_getNextFloat(osc);
-        printf("Fader 1: %f\n", osc_fader1);
+    if (strcmp(addr, "/sync") == 0) {
+        reset_time = (xTaskGetTickCount() * portTICK_PERIOD_MS);
+        return;
     }
 
-    else if (strcmp(addr, "/1/fader2") == 0) {
-        tosc_getFormat(osc);
-        osc_fader2 = tosc_getNextFloat(osc);
-        printf("Fader 2: %f\n", osc_fader2);
-    }
-
-    else if (strcmp(addr, "/1/fader3") == 0) {
-        tosc_getFormat(osc);
-        osc_fader3 = tosc_getNextFloat(osc);
-        printf("Fader 3: %f\n", osc_fader3);
-    }
-
-    else if (strcmp(addr, "/1/fader4") == 0) {
-        tosc_getFormat(osc);
-        osc_fader4 = tosc_getNextFloat(osc);
-        printf("Fader 4: %f\n", osc_fader4);
-    }
-
-    else if (strcmp(addr, "/1/toggle1") == 0) {
-        tosc_getFormat(osc);
-        run_demo = tosc_getNextInt32(osc);
-        printf("Toggle Demo: %d\n", run_demo);
-    }
-
-    else {
+    float v = tosc_getNextFloat(osc);
+    if (!fx_set_osc_property(&fx, (char *)addr, v)) {
         printf("Unhandled OSC: ");
         tosc_printMessage(osc);
+    } else {
+        state_dirty = true;
+        next_persist = (xTaskGetTickCount() * portTICK_PERIOD_MS) + 5000;
     }
+
+    // if (strcmp(addr, "/1/fader1") == 0) {
+    //     tosc_getFormat(osc);
+    //     osc_fader1 = tosc_getNextFloat(osc);
+    //     printf("Fader 1: %f\n", osc_fader1);
+    // }
+
+    // else if (strcmp(addr, "/1/fader2") == 0) {
+    //     tosc_getFormat(osc);
+    //     osc_fader2 = tosc_getNextFloat(osc);
+    //     printf("Fader 2: %f\n", osc_fader2);
+    // }
+
+    // else if (strcmp(addr, "/1/fader3") == 0) {
+    //     tosc_getFormat(osc);
+    //     osc_fader3 = tosc_getNextFloat(osc);
+    //     printf("Fader 3: %f\n", osc_fader3);
+    // }
+
+    // else if (strcmp(addr, "/1/fader4") == 0) {
+    //     tosc_getFormat(osc);
+    //     osc_fader4 = tosc_getNextFloat(osc);
+    //     printf("Fader 4: %f\n", osc_fader4);
+    // }
+
+    // else if (strcmp(addr, "/1/toggle1") == 0) {
+    //     tosc_getFormat(osc);
+    //     run_demo = tosc_getNextInt32(osc);
+    //     printf("Toggle Demo: %d\n", run_demo);
+    // }
+
+    // else {
+
+
+
+
+
+
+
+
+
+    //     printf("Unhandled OSC: ");
+    //     tosc_printMessage(osc);
+    // }
 }
 
-static void parseOsc(unsigned char *buffer, int len) {
-    if (tosc_isBundle((char *)buffer)) {
+static void parseOsc(unsigned char *buffer, int len)
+{
+    if (tosc_isBundle((char *)buffer))
+    {
         tosc_bundle bundle;
         tosc_parseBundle(&bundle, (char *)buffer, len);
         const uint64_t timetag = tosc_getTimetag(&bundle);
         tosc_message osc;
-        while (tosc_getNextMessage(&bundle, &osc)) {
+        while (tosc_getNextMessage(&bundle, &osc))
+        {
             handleOsc(&osc);
         }
     } else {
