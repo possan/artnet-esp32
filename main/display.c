@@ -184,6 +184,8 @@ const int SSD1306_EXTERNALVCC = 0;
 #define ACK_CHECK_EN                       0x1              /*!< I2C master will check ack from slave*/
 #define ACK_CHECK_DIS                      0x0              /*!< I2C master will not check ack from slave */
 
+int ssd1306_missing = false;
+
 uint8_t ssd1306_buffer[128*32/8];
 
 void ssd1306_sendCommand(unsigned char command)
@@ -204,6 +206,7 @@ void ssd1306_sendCommand(unsigned char command)
     i2c_cmd_link_delete(cmd);
     if (ret != ESP_OK) {
         printf("Failed to send I2C command %02X.\n", command);
+        ssd1306_missing = true;
     }
 }
 
@@ -223,6 +226,7 @@ void ssd1306_sendCommandPtr(unsigned char *Command, int len)
     i2c_cmd_link_delete(cmd);
     if (ret != ESP_OK) {
         printf("Failed to send I2C command.\n");
+        ssd1306_missing = true;
     }
 }
 
@@ -239,6 +243,7 @@ void ssd1306_sendData(unsigned char Data)
     i2c_cmd_link_delete(cmd);
     if (ret != ESP_OK) {
         printf("Failed to send I2C data %02X.\n", Data);
+        ssd1306_missing = true;
     }
 
 
@@ -263,7 +268,8 @@ void ssd1306_sendDataPtr(unsigned char *Data, int len)
     i2c_cmd_link_delete(cmd);
     if (ret != ESP_OK) {
         printf("Failed to send I2C data.\n");
-    }
+        ssd1306_missing = true; 
+   }
 }
 
 
@@ -294,7 +300,7 @@ void ssd1306_clearDisplay()
 
 void display_init(uint8_t sda_pin, uint8_t scl_pin) {
 
-        printf("Initializing I2C display...\n");
+    printf("Initializing I2C display...\n");
 
     int i2c_master_port = I2C_NUM_0;
     i2c_config_t conf;
@@ -524,6 +530,10 @@ void display_update(uint8_t *pixels) {
 
     // ssd1306_sendDataPtr((unsigned char *)&ssd1306_buffer, 128*32/8);
 
+    if (ssd1306_missing) {
+        return;
+    }
+
     unsigned char buf1[] = {
         SSD1306_PAGEADDR,
         0,                         // Page start address
@@ -556,6 +566,16 @@ void display_update(uint8_t *pixels) {
     ssd1306_buffer[13] = font8x8[47 * 8 + 5];
     ssd1306_buffer[14] = font8x8[47 * 8 + 6];
     ssd1306_buffer[15] = font8x8[47 * 8 + 7];
+
+    int ch = 40 + rand() % 100;
+    ssd1306_buffer[16] = font8x8[ch * 8 + 0];
+    ssd1306_buffer[17] = font8x8[ch * 8 + 1];
+    ssd1306_buffer[18] = font8x8[ch * 8 + 2];
+    ssd1306_buffer[19] = font8x8[ch * 8 + 3];
+    ssd1306_buffer[20] = font8x8[ch * 8 + 4];
+    ssd1306_buffer[21] = font8x8[ch * 8 + 5];
+    ssd1306_buffer[22] = font8x8[ch * 8 + 6];
+    ssd1306_buffer[23] = font8x8[ch * 8 + 7];
 
     ssd1306_sendDataPtr((unsigned char *)&ssd1306_buffer, 128 * 4);
 
