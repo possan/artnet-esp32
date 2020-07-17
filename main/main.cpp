@@ -27,17 +27,18 @@
 #include <math.h>
 #include "tinyosc.h"
 #include "fx.h"
+#include "ws2812_rmt.h"
 
-#define FASTLED_RMT_BUILTIN_DRIVER false
-#define FASTLED_RMT_MAX_CHANNELS 4
-#include "FastLED.h"
+// #define FASTLED_RMT_BUILTIN_DRIVER true
+// // #define FASTLED_RMT_MAX_CHANNELS 1
+// #include "FastLED.h"
 
 #define MDNS_HOSTNAME "esp-lights"
 #define EXAMPLE_MDNS_INSTANCE CONFIG_MDNS_INSTANCE
-#define NUMSTRIPS 4
+#define NUMSTRIPS 2
 #define STRIPLENGTH 300
-#define NUMPIXELS 4096
-#define MAXPIXELS 4096
+#define NUMPIXELS 512
+#define MAXPIXELS 1024
 #define FIRSTUNIVERSE 0
 #define LASTUNIVERSE 5
 #define LED_GPIO 5
@@ -90,14 +91,14 @@ static FxSettings fx = { 0, };
 #define STORAGE_NAMESPACE "state"
 
 // CRGB leds[4][STRIPLENGTH];
-CRGB leds0[STRIPLENGTH];
-CRGB leds1[STRIPLENGTH];
-CRGB leds2[STRIPLENGTH];
-CRGB leds3[STRIPLENGTH];
-CRGB leds4[STRIPLENGTH];
-CRGB leds5[STRIPLENGTH];
-CRGB leds6[STRIPLENGTH];
-CRGB leds7[STRIPLENGTH];
+// CRGB leds0[STRIPLENGTH];
+// CRGB leds1[STRIPLENGTH];
+// CRGB leds2[STRIPLENGTH];
+// CRGB leds3[STRIPLENGTH];
+// CRGB leds4[STRIPLENGTH];
+// CRGB leds5[STRIPLENGTH];
+// CRGB leds6[STRIPLENGTH];
+// CRGB leds7[STRIPLENGTH];
 
 float osc_fader1 = 0.0;
 float osc_fader2 = 0.0;
@@ -116,27 +117,30 @@ void load_or_default_appstate() {
     // default fx prameters
 
     memset(&fx, 0, sizeof(FxSettings));
-    fx.num_leds = 40;
+    fx.num_leds = 100;
     fx.opacity = 100;
 
     fx.layer[0].offset = 0;
     fx.layer[0].opacity = 100;
     fx.layer[0].color[0] = 255;
+    fx.layer[0].color[1] = 0;
+    fx.layer[0].color[2] = 0;
     fx.layer[0].radius = 3;
     fx.layer[0].repeat = 1;
     fx.layer[0].feather_left = 3;
     fx.layer[0].feather_right = 10;
-    fx.layer[0].opacity = 100;
     fx.layer[0].speed = 1000;
 
-    fx.layer[1].offset = 33;
-    fx.layer[1].opacity = 33;
-    fx.layer[1].color[0] = 255;
-    fx.layer[1].color[1] = 255;
+    fx.layer[1].offset = 0;
+    fx.layer[1].opacity = 100;
+    fx.layer[1].color[0] = 0;
+    fx.layer[1].color[1] = 0;
     fx.layer[1].color[2] = 255;
-    fx.layer[1].radius = 1;
-    fx.layer[1].repeat = 3;
-    fx.layer[1].speed = 900;
+    fx.layer[1].radius = 4;
+    fx.layer[1].repeat = 1;
+    fx.layer[1].feather_left = 10;
+    fx.layer[1].feather_right = 10;
+    fx.layer[1].speed = 955;
 
     err = nvs_open(STORAGE_NAMESPACE, NVS_READWRITE, &my_handle);
     if (err != ESP_OK) {
@@ -154,7 +158,7 @@ void load_or_default_appstate() {
         err = nvs_get_blob(my_handle, "state", &tmp, &required_size);
         if (err == ESP_OK) {
             ESP_LOGI(TAG, "Loaded stored blob");
-            memcpy(&fx, &tmp, sizeof(FxSettings));
+            // memcpy(&fx, &tmp, sizeof(FxSettings));
         }
     }
 
@@ -202,11 +206,7 @@ static void renderTask(void* pvParameters)
 
     pixelsused = STRIPLENGTH * NUMSTRIPS;
 
-    // for(int i=0; i<pixelsused; i++) {
-    //     pixelbuffer[i * 3 + 2] = i * 4;
-    // }
-
-    // comm_spi_init();
+    ws2812_rmt_init(DATA_PIN2, DATA_PIN1, MAXPIXELS);
 
     dirtypixels = true;
 
@@ -229,24 +229,13 @@ static void renderTask(void* pvParameters)
 
             fx_render(&fx, T2, (uint8_t*)&pixelbuffer2, pixelsused, (uint8_t*)&tempbuffer);
 
-            // pixelbuffer2[0] = debug ? 255 : 0;
-            // pixelbuffer2[1] = debug ? 255 : 0;
-            // pixelbuffer2[2] = debug ? 255 : 0;
-            // debug = 1 - debug;
-            // o = 0;
-            // for(int i=0; i<pixelsused; i++) {
-            //     o ++;
-            //     o ++;
-            //     pixelbuffer[o ++] = round(128.0f + 127.0f * sin((float)(i + renderframes) / 20.0f));
-            // }
-
             int crcnow = crc16_le(0, pixelbuffer2, pixelsused * 3);
 
-            // if (run_demo) {
-            //     // always render if demo.
-            //     crcnow = 42;
-            //     lastframecrc = 0;
-            // }
+            if (run_demo) {
+                // always render if demo.
+                crcnow = 42;
+                lastframecrc = 0;
+            }
 
             if (crcnow != lastframecrc) {
                 lastframecrc = crcnow;
@@ -298,43 +287,50 @@ static void renderTask(void* pvParameters)
                 // }
 
                 // ws2812_i2s_setpixels(pixelbuffer2, pixelsused);
+                uint8_t *pb2ptr = pixelbuffer2;
+                pb2ptr[0] = 255;//rand() & 255;
+                pb2ptr[1] = 0;//rand() & 255;
+                pb2ptr[2] = 0;//rand() & 255;
 
-                for(int i=0; i<STRIPLENGTH; i++) {
-                    int o = (0 * STRIPLENGTH + i) * 3;
-                    leds0[i] = pixelbuffer2[o+2] + (pixelbuffer2[o+1] << 8) + (pixelbuffer2[o+0] << 16);
+                pb2ptr[60] = 0;//rand() & 255;
+                pb2ptr[61] = 255;//rand() & 255;
+                pb2ptr[62] = 0;// rand() & 255;
 
-                    o = (1 * STRIPLENGTH + i) * 3;
-                    leds1[i] = pixelbuffer2[o+2] + (pixelbuffer2[o+1] << 8) + (pixelbuffer2[o+0] << 16);
+                pb2ptr[120] = 0;// rand() & 255;
+                pb2ptr[121] = 0;// rand() & 255;
+                pb2ptr[122] = 255;
 
-                    o = (1 * STRIPLENGTH + i) * 3;
-                    leds2[i] = pixelbuffer2[o+2] + (pixelbuffer2[o+1] << 8) + (pixelbuffer2[o+0] << 16);
+                ws2812_rmt_send(pixelbuffer2, pixelsused);
 
-                    o = (1 * STRIPLENGTH + i) * 3;
-                    leds3[i] = pixelbuffer2[o+2] + (pixelbuffer2[o+1] << 8) + (pixelbuffer2[o+0] << 16);
-                }
+                // for(int i=0; i<STRIPLENGTH; i++) {
+                //     int o = (0 * STRIPLENGTH + i) * 3;
+                //     leds0[i] = pixelbuffer2[o+2] + (pixelbuffer2[o+1] << 8) + (pixelbuffer2[o+0] << 16);
 
-                leds0[rand() & 3] = rand() & 255;
-                leds1[rand() & 3] = rand() & 255;
-                leds2[rand() & 3] = rand() & 255;
-                leds3[rand() & 3] = rand() & 255;
+                //     o = (1 * STRIPLENGTH + i) * 3;
+                //     leds1[i] = pixelbuffer2[o+2] + (pixelbuffer2[o+1] << 8) + (pixelbuffer2[o+0] << 16);
 
-                FastLED.show();
+                //     // o = (1 * STRIPLENGTH + i) * 3;
+                //     // leds2[i] = pixelbuffer2[o+2] + (pixelbuffer2[o+1] << 8) + (pixelbuffer2[o+0] << 16);
+
+                //     // o = (1 * STRIPLENGTH + i) * 3;
+                //     // leds3[i] = pixelbuffer2[o+2] + (pixelbuffer2[o+1] << 8) + (pixelbuffer2[o+0] << 16);
+                // }
+
+                // leds0[rand() & 3] = rand() & 255;
+                // leds1[rand() & 3] = rand() & 255;
+                // leds2[rand() & 3] = rand() & 255;
+                // leds3[rand() & 3] = rand() & 255;
+
+                // FastLED.show();
 
                 // comm_spi_push(pixelbuffer2, pixelsused);
                 dirtypixels = false;
 
                 renderframes ++;
             }
-
-
-            // pixelbuffer2[0] = debug ? 255 : 0;
-            // pixelbuffer2[1] = debug ? 255 : 0;
-            // pixelbuffer2[2] = debug ? 255 : 0;
-            // debug = 1 - debug;
-
         }
 
-        vTaskDelay(8 / portTICK_RATE_MS);
+        vTaskDelay(20 / portTICK_RATE_MS);
     }
 }
 
@@ -765,10 +761,10 @@ void app_main()
 
     load_or_default_appstate();
 
-    FastLED.addLeds<WS2812, DATA_PIN1, GRB>(leds0, STRIPLENGTH);
-    FastLED.addLeds<WS2812, DATA_PIN2, GRB>(leds1, STRIPLENGTH);
+    // FastLED.addLeds<WS2812, DATA_PIN1, GRB>(leds0, STRIPLENGTH);
+    // FastLED.addLeds<WS2812, DATA_PIN2, GRB>(leds1, STRIPLENGTH);
 
-    xTaskCreatePinnedToCore(&renderTask, "render", 4000, NULL, 30, NULL, 0);
+    xTaskCreatePinnedToCore(&renderTask, "render", 4000, NULL, 30, NULL, portNUM_PROCESSORS - 1);
 
     ESP_LOGI(TAG, "ESP_WIFI_MODE_STA");
     wifi_init_sta();
@@ -782,28 +778,18 @@ void app_main()
     ESP_LOGI(TAG, "mdns hostname: [%s]", hostname);
     ESP_ERROR_CHECK( mdns_hostname_set(hostname) );
     // //set default mDNS instance name
-    // ESP_ERROR_CHECK( mdns_instance_name_set("ESP-Lights") );
+    ESP_ERROR_CHECK( mdns_instance_name_set("ESP-Lights") );
 
     // //structure with TXT records
     mdns_txt_item_t serviceTxtData2[3] = {
-        // {"board", "esp32"},
+        {"board", "esp32"},
     };
 
     ESP_ERROR_CHECK( mdns_service_add(hostname, "_osc", "_udp", 9000, serviceTxtData2, 0) );
     free(hostname);
 
-    // mdns_txt_item_t serviceTxtData[3] = {
-    //     {"board", "esp32"},
-    // };
-    // // // //initialize service
-    // ESP_ERROR_CHECK( mdns_service_add("ESP32-WebServer", "_http", "_tcp", 80, serviceTxtData, 1) );
-    // //add another TXT item
-    // ESP_ERROR_CHECK( mdns_service_txt_item_set("_http", "_tcp", "path", "/foobar") );
-    // //change TXT item value
-    // ESP_ERROR_CHECK( mdns_service_txt_item_set("_http", "_tcp", "u", "admin") );
-
     // xTaskCreatePinnedToCore(&i2sTask, "i2s", 3500, NULL, 2 | portPRIVILEGE_BIT, NULL, portNUM_PROCESSORS - 1);
     xTaskCreatePinnedToCore(&debugTask, "debug", 2500, NULL, 99, NULL, 0);
-    xTaskCreatePinnedToCore(&knobTask, "knob", 2500, NULL, 99, NULL, 0);
-    xTaskCreatePinnedToCore(&displayTask, "display", 2500, NULL, 99, NULL, 0);
+    // xTaskCreatePinnedToCore(&knobTask, "knob", 2500, NULL, 99, NULL, 0);
+    // xTaskCreatePinnedToCore(&displayTask, "display", 2500, NULL, 99, NULL, 0);
 }
