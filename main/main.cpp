@@ -193,6 +193,21 @@ void save_appstate() {
     nvs_close(my_handle);
 }
 
+
+uint32_t idiot_crc(const uint8_t* buf, uint32_t len)
+{
+    uint32_t i, crc = 0;
+
+    for (i = 0; i < len; i++) {
+        crc <<= 1;
+        crc &= 0xFFFFFF;
+        crc += buf[i] & 0xff;
+    }
+
+    return crc;
+}
+
+
 static void renderTask(void* pvParameters)
 {
     int ledsperpage = 170; // 512 / 3
@@ -229,7 +244,7 @@ static void renderTask(void* pvParameters)
 
             fx_render(&fx, T2, (uint8_t*)&pixelbuffer2, pixelsused, (uint8_t*)&tempbuffer);
 
-            int crcnow = crc16_le(0, pixelbuffer2, pixelsused * 3);
+            int crcnow = idiot_crc(pixelbuffer2, pixelsused * 3);
 
             if (run_demo) {
                 // always render if demo.
@@ -288,17 +303,17 @@ static void renderTask(void* pvParameters)
 
                 // ws2812_i2s_setpixels(pixelbuffer2, pixelsused);
                 uint8_t *pb2ptr = pixelbuffer2;
-                pb2ptr[0] = 255;//rand() & 255;
-                pb2ptr[1] = 0;//rand() & 255;
-                pb2ptr[2] = 0;//rand() & 255;
+                // pb2ptr[0] = 255;//rand() & 255;
+                // pb2ptr[1] = 0;//rand() & 255;
+                // pb2ptr[2] = 0;//rand() & 255;
 
-                pb2ptr[60] = 0;//rand() & 255;
-                pb2ptr[61] = 255;//rand() & 255;
-                pb2ptr[62] = 0;// rand() & 255;
+                // pb2ptr[60] = 0;//rand() & 255;
+                // pb2ptr[61] = 255;//rand() & 255;
+                // pb2ptr[62] = 0;// rand() & 255;
 
-                pb2ptr[120] = 0;// rand() & 255;
-                pb2ptr[121] = 0;// rand() & 255;
-                pb2ptr[122] = 255;
+                // pb2ptr[120] = 0;// rand() & 255;
+                // pb2ptr[121] = 0;// rand() & 255;
+                // pb2ptr[122] = 255;
 
                 ws2812_rmt_send(pixelbuffer2, pixelsused);
 
