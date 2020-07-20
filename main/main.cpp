@@ -406,12 +406,12 @@ static void parseArtnet(unsigned char *buffer, int len) {
     h1->protver = htons(h1->protver);
     h1->datalength = htons(h1->datalength);
 
-    printf("got artnet: identifier \"%s\", opcode=%x, protover=%x, universe=%x, datalength=%x\n",
-        h1->identifier,
-        h1->opcode,
-        h1->protver,
-        h1->universe,
-        h1->datalength);
+    // printf("got artnet: identifier \"%s\", opcode=%x, protover=%x, universe=%x, datalength=%x\n",
+    //     h1->identifier,
+    //     h1->opcode,
+    //     h1->protver,
+    //     h1->universe,
+    //     h1->datalength);
 
     if (h1->opcode != 0x50) {
         // not dmx
