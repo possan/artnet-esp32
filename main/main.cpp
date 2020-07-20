@@ -153,7 +153,7 @@ void load_or_default_appstate() {
         err = nvs_get_blob(my_handle, "state", &tmp, &required_size);
         if (err == ESP_OK) {
             ESP_LOGI(TAG, "Loaded stored blob");
-            // memcpy(&fx, &tmp, sizeof(FxSettings));
+            memcpy(&fx, &tmp, sizeof(FxSettings));
         }
     }
 
