@@ -12,11 +12,30 @@
 #include <malloc.h>
 
 // See https://gist.github.com/nevercast/9c48505cc6c5687af59bcb4a22062795
-#define T_0H (35 / 5)
-#define T_1H (70 / 5)
-#define T_0L (80 / 5)
-#define T_1L (60 / 5)
-#define T_RST (5310 / 5)
+// #define T_0H (35 / 5)
+// #define T_1H (70 / 5)
+// #define T_0L (80 / 5)
+// #define T_1L (60 / 5)
+// #define T_RST (5310 / 5)
+// #define LED_RMT_TX_CHANNEL RMT_CHANNEL_0
+// #define BITS_PER_LED_CMD 24
+
+// From: https://github.com/FozzTexx/ws2812-demo/blob/master/main/ws2812.c
+#define DIVIDER		4 /* Above 4, timings start to deviate*/
+#define DURATION	12.5 /* minimum time of a single RMT duration in nanoseconds based on clock */
+
+#define PULSE_T0H	(  350 / (DURATION * DIVIDER));
+#define PULSE_T1H	(  900 / (DURATION * DIVIDER));
+#define PULSE_T0L	(  900 / (DURATION * DIVIDER));
+#define PULSE_T1L	(  350 / (DURATION * DIVIDER));
+#define PULSE_TRS	(50000 / (DURATION * DIVIDER));
+
+
+#define T_0H 15
+#define T_1H 30
+#define T_0L 32
+#define T_1L 17
+// #define T_RST 300
 #define LED_RMT_TX_CHANNEL RMT_CHANNEL_0
 #define BITS_PER_LED_CMD 24
 
@@ -38,7 +57,7 @@ void ws2812_rmt_init(int pin1, int pin2, int maxpixels)
     config.tx_config.carrier_en = false;
     config.tx_config.idle_output_en = true;
     config.tx_config.idle_level = 0;
-    config.clk_div = 4;
+    config.clk_div = 2;
 
     ESP_ERROR_CHECK(rmt_config(&config));
     ESP_ERROR_CHECK(rmt_driver_install(config.channel, 0, 0));
@@ -60,15 +79,15 @@ void ws2812_rmt_send(uint8_t *pixels, int numpixels)
         for (uint32_t bit = 0; bit < 8; bit++) {
             uint32_t bit_is_set = bits_to_send & mask;
             rmt_data[outbit] = bit_is_set ?
-            (rmt_item32_t){{{T_1H, 1, T_1L, 0}}} :
-            (rmt_item32_t){{{T_0H, 1, T_0L, 0}}};
+                (rmt_item32_t){{{T_1H, 1, T_1L, 0}}} :
+                (rmt_item32_t){{{T_0H, 1, T_0L, 0}}};
             outbit ++;
             mask >>= 1;
         }
     }
 
-    rmt_data[outbit] = (rmt_item32_t){{{T_RST, 0, T_RST, 0}}};
-    outbit ++;
+    // rmt_data[outbit] = (rmt_item32_t){{{T_RST, 0, T_RST, 0}}};
+    // outbit ++;
 
     // printf("Writing %d RMT bits.\n", outbit);
     ESP_ERROR_CHECK(rmt_write_items(LED_RMT_TX_CHANNEL, rmt_data, outbit, false));

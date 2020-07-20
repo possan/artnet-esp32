@@ -20,27 +20,24 @@
 #include "lwip/sockets.h"
 #include "lwip/sys.h"
 #include <lwip/netdb.h>
-// #include "comm-spi.h"
 #include "display.h"
 #include "knob.h"
 #include "mdns.h"
 #include <math.h>
 #include "tinyosc.h"
 #include "fx.h"
-#include "ws2812_rmt.h"
 
-// #define FASTLED_RMT_BUILTIN_DRIVER true
-// // #define FASTLED_RMT_MAX_CHANNELS 1
-// #include "FastLED.h"
+#define FASTLED_RMT_BUILTIN_DRIVER false
+#define FASTLED_RMT_MAX_CHANNELS 1
+#include "FastLED.h"
 
 #define MDNS_HOSTNAME "esp-lights"
 #define EXAMPLE_MDNS_INSTANCE CONFIG_MDNS_INSTANCE
-#define NUMSTRIPS 2
-#define STRIPLENGTH 300
-#define NUMPIXELS 512
-#define MAXPIXELS 1024
+#define NUMSTRIPS 1
+#define STRIPLENGTH 384
+#define MAXPIXELS 512
 #define FIRSTUNIVERSE 0
-#define LASTUNIVERSE 5
+#define LASTUNIVERSE 3
 #define LED_GPIO 5
 #define EXAMPLE_ESP_WIFI_MODE_AP CONFIG_ESP_WIFI_MODE_AP
 #define EXAMPLE_ESP_WIFI_SSID CONFIG_ESP_WIFI_SSID
@@ -71,14 +68,12 @@ static FxSettings fx = { 0, };
 
 #define DATA_PIN1 18
 #define DATA_PIN2 19
-#define DATA_PIN3 21
-#define DATA_PIN4 22
-
-#define DATA_PIN5 27
-#define DATA_PIN6 5
-#define DATA_PIN7 17
-#define DATA_PIN8 12
-
+// #define DATA_PIN3 21
+// #define DATA_PIN4 22
+// #define DATA_PIN5 27
+// #define DATA_PIN6 5
+// #define DATA_PIN7 17
+// #define DATA_PIN8 12
 // #define DATA_PIN0  21
 // #define DATA_PIN1  22
 // #define DATA_PIN2  19
@@ -91,7 +86,7 @@ static FxSettings fx = { 0, };
 #define STORAGE_NAMESPACE "state"
 
 // CRGB leds[4][STRIPLENGTH];
-// CRGB leds0[STRIPLENGTH];
+CRGB leds0[STRIPLENGTH];
 // CRGB leds1[STRIPLENGTH];
 // CRGB leds2[STRIPLENGTH];
 // CRGB leds3[STRIPLENGTH];
@@ -221,7 +216,44 @@ static void renderTask(void* pvParameters)
 
     pixelsused = STRIPLENGTH * NUMSTRIPS;
 
-    ws2812_rmt_init(DATA_PIN2, DATA_PIN1, MAXPIXELS);
+    memset(pixelbuffer, 0, MAXPIXELS * 3);
+    memset(pixelbuffer2, 0, MAXPIXELS * 3);
+
+    // leds0[rand() & 3] = rand() & 255;
+    // leds1[rand() & 3] = rand() & 255;
+    // leds2[rand() & 3] = rand() & 255;
+    // leds3[rand() & 3] = rand() & 255;
+
+    for(int i=0; i<3; i++) {
+        leds0[0 + i] = 0x0000FF;
+        leds0[5 + i] = 0x00FF00;
+        leds0[10 + i] = 0xFF0000;
+        leds0[15 + i] = 0x0000FF;
+        leds0[20 + i] = 0x00FF00;
+        leds0[25 + i] = 0xFF0000;
+    }
+
+    FastLED.show();
+    vTaskDelay(1000 / portTICK_RATE_MS);
+
+    FastLED.show();
+    vTaskDelay(1000 / portTICK_RATE_MS);
+
+    FastLED.show();
+    vTaskDelay(2000 / portTICK_RATE_MS);
+
+    // ws2812_rmt_init(DATA_PIN2, DATA_PIN1, MAXPIXELS);
+
+    // o = 0;
+    // for(int i=0; i<10; i++) {
+    //     pixelbuffer2[0 + o] = 255;
+    //     pixelbuffer2[31 + o] = 255;
+    //     pixelbuffer2[62 + o] = 255;
+    //     o += 3;
+    // }
+
+    // ws2812_rmt_send(pixelbuffer2, pixelsused);
+
 
     dirtypixels = true;
 
@@ -239,46 +271,57 @@ static void renderTask(void* pvParameters)
         }
 
         if (dirtypixels) {
-
             uint32_t T2 = T - reset_time;
 
-            fx_render(&fx, T2, (uint8_t*)&pixelbuffer2, pixelsused, (uint8_t*)&tempbuffer);
+            if (run_demo) {
+                fx_render(&fx, T2, (uint8_t*)&pixelbuffer2, pixelsused, (uint8_t*)&tempbuffer);
+            } else {
+                unsigned char *outptr = (unsigned char *)&pixelbuffer2;
+                for(int i=0; i<pixelsused; i++) {
+                    uint16_t o = pixeldmxoffset[i];
+                    unsigned char *inptr = (unsigned char *)&pixelbuffer + o;
+                    outptr[0] = inptr[0];
+                    outptr[1] = inptr[1];
+                    outptr[2] = inptr[2];
+                    outptr += 3;
+                }
+            }
 
             int crcnow = idiot_crc(pixelbuffer2, pixelsused * 3);
 
-            if (run_demo) {
-                // always render if demo.
+            // if (run_demo) {
+            //     // always render if demo.
                 crcnow = 42;
                 lastframecrc = 0;
-            }
-
+            // }
+            
             if (crcnow != lastframecrc) {
                 lastframecrc = crcnow;
 
-                /*
-                ESP_LOGI(TAG, "Updating pixels from DMX data, frame %d", renderframes);
+                // uint8_t *pb2ptr = pixelbuffer2;
+                // pb2ptr[0] = rand() & 255;
+                // pb2ptr[1] = 0;//rand() & 255;
+                // pb2ptr[2] = 0;//rand() & 255;
 
-                ESP_LOGI(TAG, "Pixelbuffer: %02X%02X%02X %02X%02X%02X %02X%02X%02X %02X%02X%02X %02X%02X%02X %02X%02X%02X %02X%02X%02X %02X%02X%02X ",
-                    pixelbuffer[0], pixelbuffer[1], pixelbuffer[2],
-                    pixelbuffer[3], pixelbuffer[4], pixelbuffer[5],
-                    pixelbuffer[6], pixelbuffer[7], pixelbuffer[8],
-                    pixelbuffer[9], pixelbuffer[10], pixelbuffer[11],
-                    pixelbuffer[12], pixelbuffer[13], pixelbuffer[14],
-                    pixelbuffer[15], pixelbuffer[16], pixelbuffer[17],
-                    pixelbuffer[18], pixelbuffer[19], pixelbuffer[20],
-                    pixelbuffer[21], pixelbuffer[22], pixelbuffer[23]);
-                */
+                // pb2ptr[30] = 0;//rand() & 255;
+                // pb2ptr[31] = rand() & 255;
+                // pb2ptr[32] = 0;// rand() & 255;
 
+                // pb2ptr[60] = 0;// rand() & 255;
+                // pb2ptr[61] = 0;// rand() & 255;
+                // pb2ptr[62] = rand() & 255;
 
-                // unsigned char *outptr = (unsigned char *)&pixelbuffer2;
-                // for(int i=0; i<pixelsused; i++) {
-                //     uint16_t o = pixeldmxoffset[i];
-                //     unsigned char *inptr = (unsigned char *)&pixelbuffer + o;
-                //     outptr[0] = inptr[0];
-                //     outptr[1] = inptr[1];
-                //     outptr[2] = inptr[2];
-                //     outptr += 3;
-                // }
+                // ESP_LOGI(TAG, "Updating pixels from DMX data, frame %d", renderframes);
+
+                // ESP_LOGI(TAG, "Pixelbuffer: %02X%02X%02X %02X%02X%02X %02X%02X%02X %02X%02X%02X %02X%02X%02X %02X%02X%02X %02X%02X%02X %02X%02X%02X ",
+                //     pixelbuffer2[0], pixelbuffer2[1], pixelbuffer2[2],
+                //     pixelbuffer2[3], pixelbuffer2[4], pixelbuffer2[5],
+                //     pixelbuffer2[6], pixelbuffer2[7], pixelbuffer2[8],
+                //     pixelbuffer2[9], pixelbuffer2[10], pixelbuffer2[11],
+                //     pixelbuffer2[12], pixelbuffer2[13], pixelbuffer2[14],
+                //     pixelbuffer2[15], pixelbuffer2[16], pixelbuffer2[17],
+                //     pixelbuffer2[18], pixelbuffer2[19], pixelbuffer2[20],
+                //     pixelbuffer2[21], pixelbuffer2[22], pixelbuffer2[23]);
 
                 // if (run_demo) {
                 //     memset(pixelbuffer2, 0, pixelsused * 3);
@@ -301,42 +344,30 @@ static void renderTask(void* pvParameters)
                 //     demoframe ++;
                 // }
 
-                // ws2812_i2s_setpixels(pixelbuffer2, pixelsused);
-                uint8_t *pb2ptr = pixelbuffer2;
-                // pb2ptr[0] = 255;//rand() & 255;
-                // pb2ptr[1] = 0;//rand() & 255;
-                // pb2ptr[2] = 0;//rand() & 255;
+                // ws2812_i2s_setpixels(pixelbuffer2, pixelrun_demosused);
 
-                // pb2ptr[60] = 0;//rand() & 255;
-                // pb2ptr[61] = 255;//rand() & 255;
-                // pb2ptr[62] = 0;// rand() & 255;
+                // ws2812_rmt_send(pixelbuffer2, pixelsused);
 
-                // pb2ptr[120] = 0;// rand() & 255;
-                // pb2ptr[121] = 0;// rand() & 255;
-                // pb2ptr[122] = 255;
+                for(int i=0; i<STRIPLENGTH; i++) {
+                    int o = (0 * STRIPLENGTH + i) * 3;
+                    leds0[i] = pixelbuffer2[o+2] + (pixelbuffer2[o+1] << 8) + (pixelbuffer2[o+0] << 16);
 
-                ws2812_rmt_send(pixelbuffer2, pixelsused);
+                    // o = (1 * STRIPLENGTH + i) * 3;
+                    // leds1[i] = pixelbuffer2[o+2] + (pixelbuffer2[o+1] << 8) + (pixelbuffer2[o+0] << 16);
 
-                // for(int i=0; i<STRIPLENGTH; i++) {
-                //     int o = (0 * STRIPLENGTH + i) * 3;
-                //     leds0[i] = pixelbuffer2[o+2] + (pixelbuffer2[o+1] << 8) + (pixelbuffer2[o+0] << 16);
+                    // o = (1 * STRIPLENGTH + i) * 3;
+                    // leds2[i] = pixelbuffer2[o+2] + (pixelbuffer2[o+1] << 8) + (pixelbuffer2[o+0] << 16);
 
-                //     o = (1 * STRIPLENGTH + i) * 3;
-                //     leds1[i] = pixelbuffer2[o+2] + (pixelbuffer2[o+1] << 8) + (pixelbuffer2[o+0] << 16);
-
-                //     // o = (1 * STRIPLENGTH + i) * 3;
-                //     // leds2[i] = pixelbuffer2[o+2] + (pixelbuffer2[o+1] << 8) + (pixelbuffer2[o+0] << 16);
-
-                //     // o = (1 * STRIPLENGTH + i) * 3;
-                //     // leds3[i] = pixelbuffer2[o+2] + (pixelbuffer2[o+1] << 8) + (pixelbuffer2[o+0] << 16);
-                // }
+                    // o = (1 * STRIPLENGTH + i) * 3;
+                    // leds3[i] = pixelbuffer2[o+2] + (pixelbuffer2[o+1] << 8) + (pixelbuffer2[o+0] << 16);
+                }
 
                 // leds0[rand() & 3] = rand() & 255;
                 // leds1[rand() & 3] = rand() & 255;
                 // leds2[rand() & 3] = rand() & 255;
                 // leds3[rand() & 3] = rand() & 255;
 
-                // FastLED.show();
+                FastLED.show();
 
                 // comm_spi_push(pixelbuffer2, pixelsused);
                 dirtypixels = false;
@@ -345,7 +376,7 @@ static void renderTask(void* pvParameters)
             }
         }
 
-        vTaskDelay(20 / portTICK_RATE_MS);
+        vTaskDelay(5 / portTICK_RATE_MS);
     }
 }
 
@@ -375,12 +406,12 @@ static void parseArtnet(unsigned char *buffer, int len) {
     h1->protver = htons(h1->protver);
     h1->datalength = htons(h1->datalength);
 
-    // printf("got artnet: identifier \"%s\", opcode=%x, protover=%x, universe=%x, datalength=%x\n",
-    //     h1->identifier,
-    //     h1->opcode,
-    //     h1->protver,
-    //     h1->universe,
-    //     h1->datalength);
+    printf("got artnet: identifier \"%s\", opcode=%x, protover=%x, universe=%x, datalength=%x\n",
+        h1->identifier,
+        h1->opcode,
+        h1->protver,
+        h1->universe,
+        h1->datalength);
 
     if (h1->opcode != 0x50) {
         // not dmx
@@ -401,8 +432,6 @@ static void parseArtnet(unsigned char *buffer, int len) {
         lastuniverse = h1->universe;
     }
 
-    run_demo = false;
-
     dmxframesreceived += 1;
     dmxbytesreceived += len;
 
@@ -414,6 +443,10 @@ static void parseArtnet(unsigned char *buffer, int len) {
     unsigned char *inptr = buffer + sizeof(struct ArtnetDmxHeader);
     unsigned char *outptr = (unsigned char *)&pixelbuffer + pixeloffset;
     memcpy(outptr, inptr, h1->datalength);
+
+    // printf("x\n");
+
+    run_demo = false;
 
     int lp = pixeloffset + h1->datalength;
     if (lp > renderlength) {
@@ -569,7 +602,7 @@ static void listeningTask(void* pvParameters)
     ESP_LOGI(TAG, "Bind returned %d", r);
 
     read_timeout.tv_sec = 0;
-    read_timeout.tv_usec = 10;
+    read_timeout.tv_usec = 2;
     setsockopt(s2, SOL_SOCKET, SO_RCVTIMEO, &read_timeout, sizeof read_timeout);
 
     fcntl(s, F_SETFL, O_NONBLOCK);
@@ -586,7 +619,7 @@ static void listeningTask(void* pvParameters)
             any = true;
         }
 
-        slen  = sizeof(struct sockaddr);
+        slen = sizeof(struct sockaddr);
         r = recvfrom(s, packetbuf, sizeof(packetbuf)-1, MSG_DONTWAIT, (struct sockaddr *)&si_other, &slen);
         if (r > 0) {
             // printf("recvfrom got %d bytes of data %02X %02X %02X %02X %02X, ArtNet?\n", r, packetbuf[0], packetbuf[1], packetbuf[2], packetbuf[3], packetbuf[4]);
@@ -683,7 +716,7 @@ static void debugTask(void* pvParameters)
         // ESP_LOGI(TAG, "FreeRTOS Stats:\n%s", freertosstats);
         ESP_LOGI(TAG, "Demo mode: %d - Faders: %.1f %.1f %.1f %.1f", run_demo, osc_fader1, osc_fader2, osc_fader3, osc_fader4);
         ESP_LOGI(TAG, "Artnet stats: %u dmx frames received (%u bytes) over %d ms (~%1.1f fps).", dmxframesreceived, dmxbytesreceived, dmxduration, dmxframerate);
-        ESP_LOGI(TAG, "Rendered frames: %u, %d/%d pixels length received, blit time %d ms, frame time %d ms", renderframes, renderlength, NUMPIXELS, rendertime, frametime);
+        ESP_LOGI(TAG, "Rendered frames: %u, %d/%d pixels length received, blit time %d ms, frame time %d ms", renderframes, renderlength, MAXPIXELS, rendertime, frametime);
         // ESP_LOGI(TAG, "Pixelbuffer %02X%02X%02X %02X%02X%02X %02X%02X%02X",
         //     pixelbuffer[0], pixelbuffer[1], pixelbuffer[2],
         //     pixelbuffer[3], pixelbuffer[4], pixelbuffer[5],
@@ -776,7 +809,7 @@ void app_main()
 
     load_or_default_appstate();
 
-    // FastLED.addLeds<WS2812, DATA_PIN1, GRB>(leds0, STRIPLENGTH);
+    FastLED.addLeds<WS2812B, DATA_PIN2, GRB>(leds0, STRIPLENGTH);
     // FastLED.addLeds<WS2812, DATA_PIN2, GRB>(leds1, STRIPLENGTH);
 
     xTaskCreatePinnedToCore(&renderTask, "render", 4000, NULL, 30, NULL, portNUM_PROCESSORS - 1);
