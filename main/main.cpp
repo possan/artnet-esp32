@@ -350,22 +350,36 @@ static void renderTask(void* pvParameters)
 
                 for(int i=0; i<STRIPLENGTH; i++) {
                     int o = (0 * STRIPLENGTH + i) * 3;
-                    leds0[i] = pixelbuffer2[o+2] + (pixelbuffer2[o+1] << 8) + (pixelbuffer2[o+0] << 16);
 
-                    // o = (1 * STRIPLENGTH + i) * 3;
-                    // leds1[i] = pixelbuffer2[o+2] + (pixelbuffer2[o+1] << 8) + (pixelbuffer2[o+0] << 16);
+                    uint8_t _r = pixelbuffer2[o+0];
+                    uint8_t _g = pixelbuffer2[o+1];
+                    uint8_t _b = pixelbuffer2[o+2];
 
-                    // o = (1 * STRIPLENGTH + i) * 3;
-                    // leds2[i] = pixelbuffer2[o+2] + (pixelbuffer2[o+1] << 8) + (pixelbuffer2[o+0] << 16);
+                    if (fx.pixel_order == 1) {
+                        // RBG
+                        leds0[i] = _r + (_b << 8) + (_g << 16);
 
-                    // o = (1 * STRIPLENGTH + i) * 3;
-                    // leds3[i] = pixelbuffer2[o+2] + (pixelbuffer2[o+1] << 8) + (pixelbuffer2[o+0] << 16);
+                    } else if (fx.pixel_order == 2) {
+                        // BGR
+                        leds0[i] = _b + (_g << 8) + (_r << 16);
+
+                    } else if (fx.pixel_order == 3) {
+                        // BRG
+                        leds0[i] = _b + (_r << 8) + (_g << 16);
+
+                    } else if (fx.pixel_order == 4) {
+                        // GBR
+                        leds0[i] = _g + (_b << 8) + (_r << 16);
+
+                    } else if (fx.pixel_order == 5) {
+                        // GRB
+                        leds0[i] = _g + (_r << 8) + (_b << 16);
+
+                    } else {
+                        // RGB
+                        leds0[i] = _r + (_g << 8) + (_b << 16);
+                    }
                 }
-
-                // leds0[rand() & 3] = rand() & 255;
-                // leds1[rand() & 3] = rand() & 255;
-                // leds2[rand() & 3] = rand() & 255;
-                // leds3[rand() & 3] = rand() & 255;
 
                 FastLED.show();
 

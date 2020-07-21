@@ -24,6 +24,7 @@ typedef struct {
     int32_t time_offset;
     int32_t num_leds;
     int32_t opacity;
+    int32_t pixel_order;
     FxLayerSettings layer[4];
 } FxSettings;
 

@@ -136,6 +136,15 @@ bool fx_set_osc_property(FxSettings *fx, char *addr, float value) {
     return true;
   }
 
+  if (strcmp(addr, "/pixelorder") == 0) {
+    fx->pixel_order = value;
+    if (debug) {
+      printf("Pixel order: %d\n", fx->pixel_order);
+    }
+    return true;
+  }
+
+
   if (strcmp(addr, "/layer1/opacity") == 0) {
     fx->layer[0].opacity = value;
     if (debug) {
