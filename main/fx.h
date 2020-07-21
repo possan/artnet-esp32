@@ -31,6 +31,7 @@ typedef struct {
 void fx_render_layer(FxLayerSettings *layer, uint32_t time, uint8_t *rgb, int num_leds, uint8_t *temp, int opacity);
 void fx_render(FxSettings *fx, uint32_t time, uint8_t *rgb, int max_leds, uint8_t *temp);
 bool fx_set_osc_property(FxSettings *fx, char *property, float value);
+void fx_get_config_json(FxSettings *fx, char *destination, uint32_t maxsize);
 
 #ifdef	__cplusplus
 }

@@ -15,7 +15,10 @@
 #include "esp_event_loop.h"
 #include "esp_crc.h"
 #include "esp_log.h"
+#include <esp_system.h>
+#include "esp_netif.h"
 #include "nvs_flash.h"
+#include "esp_eth.h"
 #include "lwip/err.h"
 #include "lwip/sockets.h"
 #include "lwip/sys.h"
@@ -26,6 +29,8 @@
 #include <math.h>
 #include "tinyosc.h"
 #include "fx.h"
+#include <esp_http_server.h>
+#include <algorithm> 
 
 #define FASTLED_RMT_BUILTIN_DRIVER false
 #define FASTLED_RMT_MAX_CHANNELS 1
@@ -65,6 +70,7 @@ static uint8_t dirtypixels = true;
 static bool run_demo = true;
 static uint32_t reset_time = 0;
 static FxSettings fx = { 0, };
+static char device_id[10] = { 0, };
 
 #define DATA_PIN1 18
 #define DATA_PIN2 19
@@ -137,6 +143,8 @@ void load_or_default_appstate() {
     fx.layer[1].feather_right = 10;
     fx.layer[1].speed = 955;
 
+    strcpy(device_id, "not-set");
+
     err = nvs_open(STORAGE_NAMESPACE, NVS_READWRITE, &my_handle);
     if (err != ESP_OK) {
         ESP_LOGI(TAG, "Failed to open NVS");
@@ -157,6 +165,17 @@ void load_or_default_appstate() {
         }
     }
 
+    required_size = 0;
+    err = nvs_get_blob(my_handle, "device_id", NULL, &required_size);
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "Stored blob is %d bytes, our structure is %d bytes", required_size, 10);
+        required_size = 10;
+        err = nvs_get_blob(my_handle, "device_id", &device_id, &required_size);
+        if (err == ESP_OK) {
+            ESP_LOGI(TAG, "Loaded stored blob");
+        }
+    }
+
     nvs_close(my_handle);
 }
 
@@ -164,6 +183,8 @@ void load_or_default_appstate() {
 void save_appstate() {
     nvs_handle_t my_handle;
     esp_err_t err;
+
+    ESP_LOGI(TAG, "Persisting app state NVS");
 
     // Open
     err = nvs_open(STORAGE_NAMESPACE, NVS_READWRITE, &my_handle);
@@ -179,6 +200,13 @@ void save_appstate() {
         return;
     }
 
+    ESP_LOGI(TAG, "Saving blob (%d bytes)", 10);
+    err = nvs_set_blob(my_handle, "device_id", &device_id, 10);
+    if (err != ESP_OK) {
+        ESP_LOGI(TAG, "Failed to write blob to NVS");
+        return;
+    }
+
     err = nvs_commit(my_handle);
     if (err != ESP_OK) {
         ESP_LOGI(TAG, "Failed to commit NVS");
@@ -187,6 +215,156 @@ void save_appstate() {
 
     nvs_close(my_handle);
 }
+
+
+
+
+
+
+
+
+
+
+
+static char* generate_hostname(void)
+{
+    uint8_t mac[6];
+    char   *hostname;
+    esp_read_mac(mac, ESP_MAC_WIFI_STA);
+    if (-1 == asprintf(&hostname, "%s-%02X%02X%02X", MDNS_HOSTNAME, mac[3], mac[4], mac[5])) {
+        abort();
+    }
+    return hostname;
+}
+
+
+
+
+
+
+
+/* Our URI handler function to be called during GET /uri request */
+esp_err_t get_handler(httpd_req_t *req)
+{
+    /* Send a simple response */
+    char resp[200];
+    const char *hostname = generate_hostname();
+    sprintf(resp, "<h1>ESP LIGHT SERVER</h1><p>Hostname %s</p><p>ID %s</p>", hostname, device_id);
+    httpd_resp_send(req, resp, strlen(resp));
+    delete(hostname);
+    return ESP_OK;
+}
+
+/* Our URI handler function to be called during GET /uri request */
+esp_err_t get_config_handler(httpd_req_t *req)
+{
+    /* Send a simple response */
+    char resp[4000];
+    memset(resp, 0, 4000);
+    fx_get_config_json(&fx, (char *)&resp, 4000);
+    httpd_resp_set_hdr(req, "Content-Type", "application/json");
+    httpd_resp_send(req, resp, strlen(resp));
+    return ESP_OK;
+}
+
+/* Our URI handler function to be called during POST /uri request */
+esp_err_t post_handler(httpd_req_t *req)
+{
+    /* Destination buffer for content of HTTP POST request.
+     * httpd_req_recv() accepts char* only, but content could
+     * as well be any binary data (needs type casting).
+     * In case of string data, null termination will be absent, and
+     * content length would give length of string */
+    char content[100];
+
+    /* Truncate if content length larger than the buffer */
+    size_t recv_size = std::min(req->content_len, sizeof(content));
+
+    int ret = httpd_req_recv(req, content, recv_size);
+    if (ret <= 0) {  /* 0 return value indicates connection closed */
+        /* Check if timeout occurred */
+        if (ret == HTTPD_SOCK_ERR_TIMEOUT) {
+            /* In case of timeout one can choose to retry calling
+             * httpd_req_recv(), but to keep it simple, here we
+             * respond with an HTTP 408 (Request Timeout) error */
+            httpd_resp_send_408(req);
+        }
+        /* In case of error, returning ESP_FAIL will
+         * ensure that the underlying socket is closed */
+        return ESP_FAIL;
+    }
+
+    memset(device_id, 0, 10);
+    memcpy(device_id, content, recv_size);
+    state_dirty = true;
+    next_persist = (xTaskGetTickCount() * portTICK_PERIOD_MS) + 2000;
+
+    /* Send a simple response */
+    const char resp[] = "OK";
+    httpd_resp_send(req, resp, strlen(resp));
+    return ESP_OK;
+}
+
+httpd_uri_t uri_get = {
+    .uri      = "/",
+    .method   = HTTP_GET,
+    .handler  = get_handler,
+    .user_ctx = NULL
+};
+
+httpd_uri_t uri_get_config = {
+    .uri      = "/config",
+    .method   = HTTP_GET,
+    .handler  = get_config_handler,
+    .user_ctx = NULL
+};
+
+httpd_uri_t uri_post = {
+    .uri      = "/id",
+    .method   = HTTP_POST,
+    .handler  = post_handler,
+    .user_ctx = NULL
+};
+
+/* Function for starting the webserver */
+httpd_handle_t start_webserver(void)
+{
+    /* Generate default configuration */
+    httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+    config.stack_size = 8192;
+
+    /* Empty handle to esp_http_server */
+    httpd_handle_t server = NULL;
+
+    /* Start the httpd server */
+    if (httpd_start(&server, &config) == ESP_OK) {
+        /* Register URI handlers */
+        httpd_register_uri_handler(server, &uri_get);
+        httpd_register_uri_handler(server, &uri_get_config);
+        httpd_register_uri_handler(server, &uri_post);
+    }
+    /* If server failed to start, handle will be NULL */
+    return server;
+}
+
+/* Function for stopping the webserver */
+void stop_webserver(httpd_handle_t server)
+{
+    if (server) {
+        /* Stop the httpd server */
+        httpd_stop(server);
+    }
+}
+
+
+
+
+
+
+
+
+
+
 
 
 uint32_t idiot_crc(const uint8_t* buf, uint32_t len)
@@ -219,12 +397,7 @@ static void renderTask(void* pvParameters)
     memset(pixelbuffer, 0, MAXPIXELS * 3);
     memset(pixelbuffer2, 0, MAXPIXELS * 3);
 
-    // leds0[rand() & 3] = rand() & 255;
-    // leds1[rand() & 3] = rand() & 255;
-    // leds2[rand() & 3] = rand() & 255;
-    // leds3[rand() & 3] = rand() & 255;
-
-    for(int i=0; i<3; i++) {
+    for(int i=0; i<1; i++) {
         leds0[0 + i] = 0x0000FF;
         leds0[5 + i] = 0x00FF00;
         leds0[10 + i] = 0xFF0000;
@@ -539,15 +712,6 @@ static void handleOsc(tosc_message *osc) {
     // }
 
     // else {
-
-
-
-
-
-
-
-
-
     //     printf("Unhandled OSC: ");
     //     tosc_printMessage(osc);
     // }
@@ -583,6 +747,8 @@ static void listeningTask(void* pvParameters)
     int port = 6454;
     int port2 = 9000;
     unsigned slen;
+
+    start_webserver();
 
     s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     ESP_LOGI(TAG, "Socket returned %d", s);
@@ -795,16 +961,14 @@ static void knobTask(void* pvParameters)
     }
 }
 
-static char* generate_hostname(void)
-{
-    uint8_t mac[6];
-    char   *hostname;
-    esp_read_mac(mac, ESP_MAC_WIFI_STA);
-    if (-1 == asprintf(&hostname, "%s-%02X%02X%02X", MDNS_HOSTNAME, mac[3], mac[4], mac[5])) {
-        abort();
-    }
-    return hostname;
-}
+
+
+
+
+
+
+
+
 
 extern "C" {
     void app_main();
@@ -839,7 +1003,6 @@ void app_main()
     char* hostname = generate_hostname();
     ESP_LOGI(TAG, "mdns hostname: [%s]", hostname);
     ESP_ERROR_CHECK( mdns_hostname_set(hostname) );
-    // //set default mDNS instance name
     ESP_ERROR_CHECK( mdns_instance_name_set("ESP-Lights") );
 
     // //structure with TXT records
@@ -847,7 +1010,7 @@ void app_main()
         {"board", "esp32"},
     };
 
-    ESP_ERROR_CHECK( mdns_service_add(hostname, "_osc", "_udp", 9000, serviceTxtData2, 0) );
+    ESP_ERROR_CHECK( mdns_service_add(hostname, "_osc", "_udp", 9000, serviceTxtData2, 1) );
     free(hostname);
 
     // xTaskCreatePinnedToCore(&i2sTask, "i2s", 3500, NULL, 2 | portPRIVILEGE_BIT, NULL, portNUM_PROCESSORS - 1);

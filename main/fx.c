@@ -322,6 +322,7 @@ bool fx_set_osc_property(FxSettings *fx, char *addr, float value) {
     return true;
   }
 
+
   if (strcmp(addr, "/layer3/opacity") == 0) {
     fx->layer[2].opacity = value;
     if (debug) {
@@ -409,6 +410,7 @@ bool fx_set_osc_property(FxSettings *fx, char *addr, float value) {
     }
     return true;
   }
+
 
   if (strcmp(addr, "/layer4/opacity") == 0) {
     fx->layer[3].opacity = value;
@@ -499,4 +501,89 @@ bool fx_set_osc_property(FxSettings *fx, char *addr, float value) {
   }
 
   return false;
+}
+
+void fx_get_layer_config_json(FxLayerSettings *layer, char *destination, uint32_t maxsize) {
+
+  // if (strcmp(addr, "/layer4/opacity") == 0) {
+  //   fx->layer[3].opacity = value;
+
+  // if (strcmp(addr, "/layer4/offset") == 0) {
+  //   fx->layer[3].offset = value;
+
+  // if (strcmp(addr, "/layer4/red") == 0) {
+  //   fx->layer[3].color[0] = value;
+
+  // if (strcmp(addr, "/layer4/green") == 0) {
+  //   fx->layer[3].color[1] = value;
+
+  // if (strcmp(addr, "/layer4/blue") == 0) {
+  //   fx->layer[3].color[2] = value;
+
+  // if (strcmp(addr, "/layer4/radius") == 0) {
+  //   fx->layer[3].radius = value;
+
+  // if (strcmp(addr, "/layer4/repeat") == 0) {
+  //   fx->layer[3].repeat = value;
+
+  // if (strcmp(addr, "/layer4/gamma") == 0) {
+  //   fx->layer[3].gamma = value;
+
+  // if (strcmp(addr, "/layer4/speed") == 0) {
+  //   fx->layer[3].speed = value;
+
+  // if (strcmp(addr, "/layer4/feather1") == 0) {
+  //   fx->layer[3].feather_left = value;
+
+  // if (strcmp(addr, "/layer4/feather2") == 0) {
+  //   fx->layer[3].feather_right = value;
+
+  sprintf(destination, "{"
+    "\"opacity\":%d,"
+    "\"offset\":%d,"
+    "\"red\":%d,"
+    "\"green\":%d,"
+    "\"blue\":%d,"
+    "\"radius\":%d,"
+    "\"repeat\":%d,"
+    "\"gamma\":%d,"
+    "\"speed\":%d,"
+    "\"feather1\":%d,"
+    "\"feathre2\":%d"
+    "}",
+    layer->opacity,
+    layer->offset,
+    layer->color[0],
+    layer->color[1],
+    layer->color[2],
+    layer->radius,
+    layer->repeat,
+    layer->gamma,
+    layer->speed,
+    layer->feather_left,
+    layer->feather_right);
+}
+
+void fx_get_config_json(FxSettings *fx, char *destination, uint32_t maxsize) {
+  char l1buf[500];
+  char l2buf[500];
+  char l3buf[500];
+  char l4buf[500];
+
+  fx_get_layer_config_json(&fx->layer[0], &l1buf, 200);
+  fx_get_layer_config_json(&fx->layer[1], &l2buf, 200);
+  fx_get_layer_config_json(&fx->layer[2], &l3buf, 200);
+  fx_get_layer_config_json(&fx->layer[3], &l4buf, 200);
+
+  // strcmp(addr, "/length") == 0
+  // strcmp(addr, "/nudge") == 0
+  // strcmp(addr, "/opacity") == 0
+  // strcmp(addr, "/pixelorder") == 0
+
+  sprintf(destination, "{\n"
+    "\"length\":%d,\"pixelorder\":%d,\"opacity\":%d,\"nudge\":%d,\n"
+    "\"layers\":[\n%s,\n%s,\n%s,\n%s\n"
+    "]}",
+    fx->num_leds, fx->pixel_order, fx->opacity, fx->time_offset,
+    l1buf, l2buf, l3buf, l4buf);
 }
