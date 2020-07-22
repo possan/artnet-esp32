@@ -2,18 +2,28 @@
 #include <stdio.h>
 #include <string.h>
 
-uint8_t brightness_at_position(FxLayerSettings *layer, float time, int led, int num_leds, uint8_t *temp) {
+uint8_t brightness_at_position(FxLayerSettings *layer, FxSettings *fx, float time, int led, int num_leds, uint8_t *temp) {
+
+
+
     uint32_t ramp_i =
       1024*1024 +
       (led * 1024) +
-      ((time * layer->speed) / 16) +
-      (layer->offset * 16)
+
+
+      ((time * layer->speed_multiplier / 1000) * num_leds * fx->base_speed / 60000) + // base_speed is in rpm * 1000
+
+
+
+      // ((time * layer->speed_multiplier) / 16) +
+
+      ((layer->offset * num_leds * 1024 / layer->repeat) / 100000) // offset is in percent * 1000
       ;
 
     // uint32_t p = (ramp_i >> 10) % (num_leds / layer->repeat);
 
     ramp_i *= layer->repeat;
-    ramp_i &= 0xFFFFFF;
+    ramp_i &= 0xFFFFFFF;
 
 
     uint16_t f1 = ramp_i & 1023;
@@ -27,10 +37,10 @@ uint8_t brightness_at_position(FxLayerSettings *layer, float time, int led, int 
 
     return v;
 
-    // return p < layer->radius ? 255 : 0;
+    // return p < layer->size ? 255 : 0;
 }
 
-void fx_render_layer(FxLayerSettings *layer, uint32_t time, uint8_t *rgb, int num_leds, uint8_t *temp, int opacity) {
+void fx_render_layer(FxLayerSettings *layer, FxSettings *fx, uint32_t time, uint8_t *rgb, int num_leds, uint8_t *temp, int opacity) {
 
     uint16_t finalopacity = (layer->opacity * opacity);
 
@@ -50,14 +60,19 @@ void fx_render_layer(FxLayerSettings *layer, uint32_t time, uint8_t *rgb, int nu
 
     memset(temp, 0, num_leds);
 
+    // sizes are in percent * 1000
+    int s1 = (layer->feather_left * num_leds) / 100;
+    int s2 = (layer->size * num_leds) / 100;
+    int s3 = (layer->feather_right * num_leds) / 100;
+
     o = 0;
     for(int j=0; j<num_leds; j++) {
-      if (j < layer->feather_left) {
-        temp[o] = (j * 255) / layer->feather_left;
-      } else if(j < layer->feather_left + layer->radius) {
+      if (j < s1 && s1 > 0) {
+        temp[o] = (j * 255) / s1;
+      } else if(j < s1 + s2) {
         temp[o] = 255;
-      } else if(j < layer->feather_left + layer->radius + layer->feather_right) {
-        temp[o] = 255 - ((j - (layer->feather_left + layer->radius)) * 255) / layer->feather_right;
+      } else if(j < s1 + s2 + s3 && s3 > 0) {
+        temp[o] = 255 - ((j - (s1 + s2)) * 255) / s3;
       }
       o ++;
     }
@@ -67,7 +82,7 @@ void fx_render_layer(FxLayerSettings *layer, uint32_t time, uint8_t *rgb, int nu
     o = 0;
     for(int j=0; j<num_leds; j++) {
 
-      uint16_t x, bri = brightness_at_position(layer, time, j, num_leds, temp);
+      uint16_t x, bri = brightness_at_position(layer, fx, time, j, num_leds, temp);
 
       // printf("%3d ", bri);
 
@@ -103,14 +118,14 @@ void fx_render(FxSettings *fx, uint32_t time, uint8_t *rgb, int max_leds, uint8_
         return;
     }
 
-    fx_render_layer(&fx->layer[0], time2, rgb, fx->num_leds, temp, fx->opacity);
-    fx_render_layer(&fx->layer[1], time2, rgb, fx->num_leds, temp, fx->opacity);
-    fx_render_layer(&fx->layer[2], time2, rgb, fx->num_leds, temp, fx->opacity);
-    fx_render_layer(&fx->layer[3], time2, rgb, fx->num_leds, temp, fx->opacity);
+    fx_render_layer(&fx->layer[0], fx, time2, rgb, fx->num_leds, temp, fx->opacity);
+    fx_render_layer(&fx->layer[1], fx, time2, rgb, fx->num_leds, temp, fx->opacity);
+    fx_render_layer(&fx->layer[2], fx, time2, rgb, fx->num_leds, temp, fx->opacity);
+    fx_render_layer(&fx->layer[3], fx, time2, rgb, fx->num_leds, temp, fx->opacity);
 }
 
-bool fx_set_osc_property(FxSettings *fx, char *addr, float value) {
-  bool debug = false;
+bool fx_set_osc_property(FxSettings *fx, char *addr, uint32_t value) {
+  bool debug = true;
 
   if (strcmp(addr, "/length") == 0) {
     fx->num_leds = value;
@@ -140,6 +155,14 @@ bool fx_set_osc_property(FxSettings *fx, char *addr, float value) {
     fx->pixel_order = value;
     if (debug) {
       printf("Pixel order: %d\n", fx->pixel_order);
+    }
+    return true;
+  }
+
+  if (strcmp(addr, "/basespeed") == 0) {
+    fx->base_speed = value;
+    if (debug) {
+      printf("Base speed: %d\n", fx->base_speed);
     }
     return true;
   }
@@ -185,10 +208,10 @@ bool fx_set_osc_property(FxSettings *fx, char *addr, float value) {
     return true;
   }
 
-  if (strcmp(addr, "/layer1/radius") == 0) {
-    fx->layer[0].radius = value;
+  if (strcmp(addr, "/layer1/size") == 0) {
+    fx->layer[0].size = value;
     if (debug) {
-      printf("Layer 1 radius: %d\n", fx->layer[0].radius);
+      printf("Layer 1 size: %d\n", fx->layer[0].size);
     }
     return true;
   }
@@ -210,9 +233,9 @@ bool fx_set_osc_property(FxSettings *fx, char *addr, float value) {
   }
 
   if (strcmp(addr, "/layer1/speed") == 0) {
-    fx->layer[0].speed = value;
+    fx->layer[0].speed_multiplier = value;
     if (debug) {
-      printf("Layer 1 speed: %d\n", fx->layer[0].speed);
+      printf("Layer 1 speed multiplier: %d\n", fx->layer[0].speed_multiplier);
     }
     return true;
   }
@@ -274,10 +297,10 @@ bool fx_set_osc_property(FxSettings *fx, char *addr, float value) {
     return true;
   }
 
-  if (strcmp(addr, "/layer2/radius") == 0) {
-    fx->layer[1].radius = value;
+  if (strcmp(addr, "/layer2/size") == 0) {
+    fx->layer[1].size = value;
     if (debug) {
-      printf("Layer 2 radius: %d\n", fx->layer[1].radius);
+      printf("Layer 2 size: %d\n", fx->layer[1].size);
     }
     return true;
   }
@@ -299,9 +322,9 @@ bool fx_set_osc_property(FxSettings *fx, char *addr, float value) {
   }
 
   if (strcmp(addr, "/layer2/speed") == 0) {
-    fx->layer[1].speed = value;
+    fx->layer[1].speed_multiplier = value;
     if (debug) {
-      printf("Layer 2 speed: %d\n", fx->layer[1].speed);
+      printf("Layer 2 speed multiplier: %d\n", fx->layer[1].speed_multiplier);
     }
     return true;
   }
@@ -363,10 +386,10 @@ bool fx_set_osc_property(FxSettings *fx, char *addr, float value) {
     return true;
   }
 
-  if (strcmp(addr, "/layer3/radius") == 0) {
-    fx->layer[2].radius = value;
+  if (strcmp(addr, "/layer3/size") == 0) {
+    fx->layer[2].size = value;
     if (debug) {
-      printf("Layer 3 radius: %d\n", fx->layer[2].radius);
+      printf("Layer 3 size: %d\n", fx->layer[2].size);
     }
     return true;
   }
@@ -388,9 +411,9 @@ bool fx_set_osc_property(FxSettings *fx, char *addr, float value) {
   }
 
   if (strcmp(addr, "/layer3/speed") == 0) {
-    fx->layer[2].speed = value;
+    fx->layer[2].speed_multiplier = value;
     if (debug) {
-      printf("Layer 3 speed: %d\n", fx->layer[2].speed);
+      printf("Layer 3 speed multiplier: %d\n", fx->layer[2].speed_multiplier);
     }
     return true;
   }
@@ -452,10 +475,10 @@ bool fx_set_osc_property(FxSettings *fx, char *addr, float value) {
     return true;
   }
 
-  if (strcmp(addr, "/layer4/radius") == 0) {
-    fx->layer[3].radius = value;
+  if (strcmp(addr, "/layer4/size") == 0) {
+    fx->layer[3].size = value;
     if (debug) {
-      printf("Layer 4 radius: %d\n", fx->layer[3].radius);
+      printf("Layer 4 size: %d\n", fx->layer[3].size);
     }
     return true;
   }
@@ -477,9 +500,9 @@ bool fx_set_osc_property(FxSettings *fx, char *addr, float value) {
   }
 
   if (strcmp(addr, "/layer4/speed") == 0) {
-    fx->layer[3].speed = value;
+    fx->layer[3].speed_multiplier = value;
     if (debug) {
-      printf("Layer 4 speed: %d\n", fx->layer[3].speed);
+      printf("Layer 4 speed multiplier: %d\n", fx->layer[3].speed_multiplier);
     }
     return true;
   }
@@ -504,62 +527,28 @@ bool fx_set_osc_property(FxSettings *fx, char *addr, float value) {
 }
 
 void fx_get_layer_config_json(FxLayerSettings *layer, char *destination, uint32_t maxsize) {
-
-  // if (strcmp(addr, "/layer4/opacity") == 0) {
-  //   fx->layer[3].opacity = value;
-
-  // if (strcmp(addr, "/layer4/offset") == 0) {
-  //   fx->layer[3].offset = value;
-
-  // if (strcmp(addr, "/layer4/red") == 0) {
-  //   fx->layer[3].color[0] = value;
-
-  // if (strcmp(addr, "/layer4/green") == 0) {
-  //   fx->layer[3].color[1] = value;
-
-  // if (strcmp(addr, "/layer4/blue") == 0) {
-  //   fx->layer[3].color[2] = value;
-
-  // if (strcmp(addr, "/layer4/radius") == 0) {
-  //   fx->layer[3].radius = value;
-
-  // if (strcmp(addr, "/layer4/repeat") == 0) {
-  //   fx->layer[3].repeat = value;
-
-  // if (strcmp(addr, "/layer4/gamma") == 0) {
-  //   fx->layer[3].gamma = value;
-
-  // if (strcmp(addr, "/layer4/speed") == 0) {
-  //   fx->layer[3].speed = value;
-
-  // if (strcmp(addr, "/layer4/feather1") == 0) {
-  //   fx->layer[3].feather_left = value;
-
-  // if (strcmp(addr, "/layer4/feather2") == 0) {
-  //   fx->layer[3].feather_right = value;
-
   sprintf(destination, "{"
-    "\"opacity\":%d,"
-    "\"offset\":%d,"
-    "\"red\":%d,"
-    "\"green\":%d,"
-    "\"blue\":%d,"
-    "\"radius\":%d,"
-    "\"repeat\":%d,"
-    "\"gamma\":%d,"
-    "\"speed\":%d,"
-    "\"feather1\":%d,"
-    "\"feathre2\":%d"
+    "\"op\":%d,"
+    "\"of\":%d,"
+    "\"r\":%d,"
+    "\"g\":%d,"
+    "\"b\":%d,"
+    "\"siz\":%d,"
+    "\"rep\":%d,"
+    "\"gam\":%d,"
+    "\"spd\":%d,"
+    "\"fe1\":%d,"
+    "\"fe2\":%d"
     "}",
     layer->opacity,
     layer->offset,
     layer->color[0],
     layer->color[1],
     layer->color[2],
-    layer->radius,
+    layer->size,
     layer->repeat,
     layer->gamma,
-    layer->speed,
+    layer->speed_multiplier,
     layer->feather_left,
     layer->feather_right);
 }
@@ -581,9 +570,9 @@ void fx_get_config_json(FxSettings *fx, char *destination, uint32_t maxsize) {
   // strcmp(addr, "/pixelorder") == 0
 
   sprintf(destination, "{\n"
-    "\"length\":%d,\"pixelorder\":%d,\"opacity\":%d,\"nudge\":%d,\n"
+    "\"length\":%d,\"pixelorder\":%d,\"opacity\":%d,\"nudge\":%d,\n,\"basespeed\":%d,\n"
     "\"layers\":[\n%s,\n%s,\n%s,\n%s\n"
     "]}",
-    fx->num_leds, fx->pixel_order, fx->opacity, fx->time_offset,
+    fx->num_leds, fx->pixel_order, fx->opacity, fx->time_offset, fx->base_speed,
     l1buf, l2buf, l3buf, l4buf);
 }

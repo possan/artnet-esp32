@@ -126,22 +126,22 @@ void load_or_default_appstate() {
     fx.layer[0].color[0] = 255;
     fx.layer[0].color[1] = 0;
     fx.layer[0].color[2] = 0;
-    fx.layer[0].radius = 3;
+    fx.layer[0].size = 3;
     fx.layer[0].repeat = 1;
     fx.layer[0].feather_left = 3;
     fx.layer[0].feather_right = 10;
-    fx.layer[0].speed = 1000;
+    fx.layer[0].speed_multiplier = 1024;
 
     fx.layer[1].offset = 0;
     fx.layer[1].opacity = 100;
     fx.layer[1].color[0] = 0;
     fx.layer[1].color[1] = 0;
     fx.layer[1].color[2] = 255;
-    fx.layer[1].radius = 4;
+    fx.layer[1].size = 4;
     fx.layer[1].repeat = 1;
     fx.layer[1].feather_left = 10;
     fx.layer[1].feather_right = 10;
-    fx.layer[1].speed = 955;
+    fx.layer[1].speed_multiplier = 768;
 
     strcpy(device_id, "not-set");
 
@@ -294,8 +294,63 @@ esp_err_t post_handler(httpd_req_t *req)
         return ESP_FAIL;
     }
 
+
     memset(device_id, 0, 10);
     memcpy(device_id, content, recv_size);
+
+    printf("Set device id \"%s\"\n", device_id);
+
+    state_dirty = true;
+    next_persist = (xTaskGetTickCount() * portTICK_PERIOD_MS) + 2000;
+
+    /* Send a simple response */
+    const char resp[] = "OK";
+    httpd_resp_send(req, resp, strlen(resp));
+    return ESP_OK;
+}
+
+/* Our URI handler function to be called during POST /uri request */
+esp_err_t post_prop_handler(httpd_req_t *req)
+{
+    /* Destination buffer for content of HTTP POST request.
+     * httpd_req_recv() accepts char* only, but content could
+     * as well be any binary data (needs type casting).
+     * In case of string data, null termination will be absent, and
+     * content length would give length of string */
+    char content[100];
+
+    /* Truncate if content length larger than the buffer */
+    size_t recv_size = std::min(req->content_len, sizeof(content));
+
+    int ret = httpd_req_recv(req, content, recv_size);
+    if (ret <= 0) {  /* 0 return value indicates connection closed */
+        /* Check if timeout occurred */
+        if (ret == HTTPD_SOCK_ERR_TIMEOUT) {
+            /* In case of timeout one can choose to retry calling
+             * httpd_req_recv(), but to keep it simple, here we
+             * respond with an HTTP 408 (Request Timeout) error */
+            httpd_resp_send_408(req);
+        }
+        /* In case of error, returning ESP_FAIL will
+         * ensure that the underlying socket is closed */
+        return ESP_FAIL;
+    }
+
+    content[recv_size] = 0;
+
+    char prop[100];
+    // skip "/prop/" part of uri
+    strcpy(prop, req->uri + 5);
+
+    uint32_t value = atoi(content);
+
+    printf("Set property \"%s\" to %d\n", prop, value);
+
+    if (!fx_set_osc_property(&fx, prop, value)) {
+        httpd_resp_send_404(req);
+        return ESP_FAIL;
+    }
+
     state_dirty = true;
     next_persist = (xTaskGetTickCount() * portTICK_PERIOD_MS) + 2000;
 
@@ -326,12 +381,20 @@ httpd_uri_t uri_post = {
     .user_ctx = NULL
 };
 
+httpd_uri_t uri_post_prop = {
+    .uri      = "/prop/*?",
+    .method   = HTTP_POST,
+    .handler  = post_prop_handler,
+    .user_ctx = NULL
+};
+
 /* Function for starting the webserver */
 httpd_handle_t start_webserver(void)
 {
     /* Generate default configuration */
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.stack_size = 8192;
+    config.uri_match_fn = httpd_uri_match_wildcard;
 
     /* Empty handle to esp_http_server */
     httpd_handle_t server = NULL;
@@ -342,6 +405,7 @@ httpd_handle_t start_webserver(void)
         httpd_register_uri_handler(server, &uri_get);
         httpd_register_uri_handler(server, &uri_get_config);
         httpd_register_uri_handler(server, &uri_post);
+        httpd_register_uri_handler(server, &uri_post_prop);
     }
     /* If server failed to start, handle will be NULL */
     return server;
