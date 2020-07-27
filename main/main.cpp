@@ -118,30 +118,32 @@ void load_or_default_appstate() {
     // default fx prameters
 
     memset(&fx, 0, sizeof(FxSettings));
-    fx.num_leds = 100;
+    fx.num_leds = 32;
     fx.opacity = 100;
+    fx.base_speed = 60000;
+    fx.pixel_order = 0;
 
     fx.layer[0].offset = 0;
     fx.layer[0].opacity = 100;
     fx.layer[0].color[0] = 255;
     fx.layer[0].color[1] = 0;
     fx.layer[0].color[2] = 0;
-    fx.layer[0].size = 3;
+    fx.layer[0].size = 10;
     fx.layer[0].repeat = 1;
     fx.layer[0].feather_left = 3;
     fx.layer[0].feather_right = 10;
-    fx.layer[0].speed_multiplier = 1024;
+    fx.layer[0].speed_multiplier = 1000;
 
     fx.layer[1].offset = 0;
     fx.layer[1].opacity = 100;
     fx.layer[1].color[0] = 0;
     fx.layer[1].color[1] = 0;
     fx.layer[1].color[2] = 255;
-    fx.layer[1].size = 4;
+    fx.layer[1].size = 10;
     fx.layer[1].repeat = 1;
     fx.layer[1].feather_left = 10;
     fx.layer[1].feather_right = 10;
-    fx.layer[1].speed_multiplier = 768;
+    fx.layer[1].speed_multiplier = 500;
 
     strcpy(device_id, "not-set");
 
@@ -151,24 +153,27 @@ void load_or_default_appstate() {
         return;
     }
 
-    // Read restart counter
     FxSettings tmp = { 0, };
     size_t required_size = 0;
     err = nvs_get_blob(my_handle, "state", NULL, &required_size);
     if (err == ESP_OK) {
         ESP_LOGI(TAG, "Stored blob is %d bytes, our structure is %d bytes", required_size, sizeof(FxSettings));
-        required_size = sizeof(FxSettings);
-        err = nvs_get_blob(my_handle, "state", &tmp, &required_size);
-        if (err == ESP_OK) {
-            ESP_LOGI(TAG, "Loaded stored blob");
-            memcpy(&fx, &tmp, sizeof(FxSettings));
+        if (required_size == sizeof(FxSettings)) {
+            required_size = sizeof(FxSettings);
+            err = nvs_get_blob(my_handle, "state", &tmp, &required_size);
+            if (err == ESP_OK) {
+                ESP_LOGI(TAG, "Loaded stored blob");
+                memcpy(&fx, &tmp, sizeof(FxSettings));
+            }
+        } else {
+            ESP_LOGI(TAG, "Stored blob differs in size, ignore it.");
         }
     }
 
     required_size = 0;
     err = nvs_get_blob(my_handle, "device_id", NULL, &required_size);
     if (err == ESP_OK) {
-        ESP_LOGI(TAG, "Stored blob is %d bytes, our structure is %d bytes", required_size, 10);
+        ESP_LOGI(TAG, "Stored blob is %d bytes", required_size);
         required_size = 10;
         err = nvs_get_blob(my_handle, "device_id", &device_id, &required_size);
         if (err == ESP_OK) {
@@ -259,9 +264,10 @@ esp_err_t get_handler(httpd_req_t *req)
 esp_err_t get_config_handler(httpd_req_t *req)
 {
     /* Send a simple response */
+    uint32_t uptime = xTaskGetTickCount() * portTICK_PERIOD_MS;
     char resp[4000];
     memset(resp, 0, 4000);
-    fx_get_config_json(&fx, (char *)&resp, 4000);
+    fx_get_config_json(&fx, (char *)&resp, 4000, uptime);
     httpd_resp_set_hdr(req, "Content-Type", "application/json");
     httpd_resp_send(req, resp, strlen(resp));
     return ESP_OK;
@@ -500,6 +506,7 @@ static void renderTask(void* pvParameters)
 
     uint32_t nextupdate = 0;
     uint32_t demoframe = 0;
+    uint32_t lastframetime = 0;
     while(true) {
         uint32_t T = xTaskGetTickCount() * portTICK_PERIOD_MS;
         if (T > nextupdate) {
@@ -509,11 +516,16 @@ static void renderTask(void* pvParameters)
 
         if (dirtypixels) {
             uint32_t T2 = T - reset_time;
+            unsigned char *outptr = (unsigned char *)&pixelbuffer2;
 
             if (run_demo) {
-                fx_render(&fx, T2, (uint8_t*)&pixelbuffer2, pixelsused, (uint8_t*)&tempbuffer);
+                uint32_t DT = T2 - lastframetime;
+                if (DT > 1000) {
+                    DT = 0;
+                }
+                fx_render(&fx, T2, (uint8_t*)&pixelbuffer2, pixelsused, (uint8_t*)&tempbuffer, DT);
+                lastframetime = T2;
             } else {
-                unsigned char *outptr = (unsigned char *)&pixelbuffer2;
                 for(int i=0; i<pixelsused; i++) {
                     uint16_t o = pixeldmxoffset[i];
                     unsigned char *inptr = (unsigned char *)&pixelbuffer + o;
@@ -523,98 +535,103 @@ static void renderTask(void* pvParameters)
                     outptr += 3;
                 }
             }
+            
+            if (fx.test_pattern == 1) {
+                memset(pixelbuffer2, 0, STRIPLENGTH * 3);
+
+                // R_GG__BBB pattern
+                outptr[0*3 + 0] = 255;  
+
+                outptr[2*3 + 1] = 255;
+                outptr[3*3 + 1] = 255;
+
+                outptr[6*3 + 2] = 255;
+                outptr[7*3 + 2] = 255;
+                outptr[8*3 + 2] = 255;
+            }
+
+            if (fx.test_pattern == 2) {
+                // Light every 10
+                memset(pixelbuffer2, 0, STRIPLENGTH * 3);
+                unsigned char *outptr = (unsigned char *)&pixelbuffer2;
+
+                for(int i=0; i<pixelsused; i++) {
+                    if (i % 10 == 0) {
+                        outptr[i * 3 + 0] = 255;
+                        outptr[i * 3 + 1] = 255;
+                        outptr[i * 3 + 2] = 255;
+                    }
+                }
+            }
+
+            if (fx.test_pattern == 3) {
+                // Rainbow?
+                memset(pixelbuffer2, 0, STRIPLENGTH * 3);
+                unsigned char *outptr = (unsigned char *)&pixelbuffer2;
+
+                for(int i=0; i<pixelsused; i++) {
+                    
+                }
+            }
+
+            if (fx.test_pattern == 4) {
+                // RGB Ramp
+
+                memset(pixelbuffer2, 0, STRIPLENGTH * 3);
+                unsigned char *outptr = (unsigned char *)&pixelbuffer2;
+
+                for(int i=0; i<pixelsused; i++) {
+                    int gg = (i / 32) % 3;
+                    outptr[i * 3 + gg] = i * 255 / 32;
+                }
+            }
 
             int crcnow = idiot_crc(pixelbuffer2, pixelsused * 3);
 
             // if (run_demo) {
             //     // always render if demo.
-                crcnow = 42;
-                lastframecrc = 0;
+            crcnow = 42;
+            lastframecrc = 0;
             // }
             
             if (crcnow != lastframecrc) {
                 lastframecrc = crcnow;
 
-                // uint8_t *pb2ptr = pixelbuffer2;
-                // pb2ptr[0] = rand() & 255;
-                // pb2ptr[1] = 0;//rand() & 255;
-                // pb2ptr[2] = 0;//rand() & 255;
-
-                // pb2ptr[30] = 0;//rand() & 255;
-                // pb2ptr[31] = rand() & 255;
-                // pb2ptr[32] = 0;// rand() & 255;
-
-                // pb2ptr[60] = 0;// rand() & 255;
-                // pb2ptr[61] = 0;// rand() & 255;
-                // pb2ptr[62] = rand() & 255;
-
-                // ESP_LOGI(TAG, "Updating pixels from DMX data, frame %d", renderframes);
-
-                // ESP_LOGI(TAG, "Pixelbuffer: %02X%02X%02X %02X%02X%02X %02X%02X%02X %02X%02X%02X %02X%02X%02X %02X%02X%02X %02X%02X%02X %02X%02X%02X ",
-                //     pixelbuffer2[0], pixelbuffer2[1], pixelbuffer2[2],
-                //     pixelbuffer2[3], pixelbuffer2[4], pixelbuffer2[5],
-                //     pixelbuffer2[6], pixelbuffer2[7], pixelbuffer2[8],
-                //     pixelbuffer2[9], pixelbuffer2[10], pixelbuffer2[11],
-                //     pixelbuffer2[12], pixelbuffer2[13], pixelbuffer2[14],
-                //     pixelbuffer2[15], pixelbuffer2[16], pixelbuffer2[17],
-                //     pixelbuffer2[18], pixelbuffer2[19], pixelbuffer2[20],
-                //     pixelbuffer2[21], pixelbuffer2[22], pixelbuffer2[23]);
-
-                // if (run_demo) {
-                //     memset(pixelbuffer2, 0, pixelsused * 3);
-
-                //     int t0 = (int)(osc_fader1 * 40.0f);
-                //     int t1 = 255 - (int)(osc_fader2 * 255.0f);
-                //     int t2 = 255 - (int)(osc_fader3 * 255.0f);
-                //     int t3 = 255 - (int)(osc_fader4 * 255.0f);
-
-                //     for(int j=0; j<NUMSTRIPS; j++) {
-                //         for(int i=0; i<STRIPLENGTH; i++) {
-                //             int x = (i + j + (demoframe + t0)) % 20;
-                //             int o = (j * STRIPLENGTH + i) * 3;
-                //             if (x == 0) pixelbuffer2[o + 0] = t1;
-                //             if (x == 1) pixelbuffer2[o + 1] = t2;
-                //             if (x == 2) pixelbuffer2[o + 2] = t3;
-                //         }
-                //     }
-
-                //     demoframe ++;
-                // }
-
-                // ws2812_i2s_setpixels(pixelbuffer2, pixelrun_demosused);
-
-                // ws2812_rmt_send(pixelbuffer2, pixelsused);
-
                 for(int i=0; i<STRIPLENGTH; i++) {
+                    leds0[i] = 0;
+                }
+
+                for(int i=0; i<pixelsused; i++) {
+                    int j = i + fx.skip_leds;
                     int o = (0 * STRIPLENGTH + i) * 3;
 
-                    uint8_t _r = pixelbuffer2[o+0];
-                    uint8_t _g = pixelbuffer2[o+1];
-                    uint8_t _b = pixelbuffer2[o+2];
+                    uint8_t _r = pixelbuffer2[o + 0];
+                    uint8_t _g = pixelbuffer2[o + 1];
+                    uint8_t _b = pixelbuffer2[o + 2];
 
                     if (fx.pixel_order == 1) {
                         // RBG
-                        leds0[i] = _r + (_b << 8) + (_g << 16);
+                        leds0[j] = _r + (_b << 8) + (_g << 16);
 
                     } else if (fx.pixel_order == 2) {
                         // BGR
-                        leds0[i] = _b + (_g << 8) + (_r << 16);
+                        leds0[j] = _b + (_g << 8) + (_r << 16);
 
                     } else if (fx.pixel_order == 3) {
                         // BRG
-                        leds0[i] = _b + (_r << 8) + (_g << 16);
+                        leds0[j] = _b + (_r << 8) + (_g << 16);
 
                     } else if (fx.pixel_order == 4) {
                         // GBR
-                        leds0[i] = _g + (_b << 8) + (_r << 16);
+                        leds0[j] = _g + (_b << 8) + (_r << 16);
 
                     } else if (fx.pixel_order == 5) {
                         // GRB
-                        leds0[i] = _g + (_r << 8) + (_b << 16);
+                        leds0[j] = _g + (_r << 8) + (_b << 16);
 
                     } else {
                         // RGB
-                        leds0[i] = _r + (_g << 8) + (_b << 16);
+                        leds0[j] = _r + (_g << 8) + (_b << 16);
                     }
                 }
 
@@ -733,6 +750,17 @@ static void handleOsc(tosc_message *osc) {
 
     if (strcmp(addr, "/sync") == 0) {
         reset_time = (xTaskGetTickCount() * portTICK_PERIOD_MS);
+        printf("Sync!\n");
+        fx._time = 0;
+        fx._progress = 0;
+        fx.layer[0]._time = 0;
+        fx.layer[0]._progress = 0;
+        fx.layer[1]._time = 0;
+        fx.layer[1]._progress = 0;
+        fx.layer[2]._time = 0;
+        fx.layer[2]._progress = 0;
+        fx.layer[3]._time = 0;
+        fx.layer[3]._progress = 0;
         return;
     }
 
@@ -1059,10 +1087,8 @@ void app_main()
     ESP_LOGI(TAG, "ESP_WIFI_MODE_STA");
     wifi_init_sta();
 
-
     // initialize mDNS
     ESP_ERROR_CHECK( mdns_init() );
-    // set mDNS hostname (required if you want to advertise services)
 
     char* hostname = generate_hostname();
     ESP_LOGI(TAG, "mdns hostname: [%s]", hostname);
@@ -1075,6 +1101,8 @@ void app_main()
     };
 
     ESP_ERROR_CHECK( mdns_service_add(hostname, "_osc", "_udp", 9000, serviceTxtData2, 1) );
+    ESP_ERROR_CHECK( mdns_service_add(hostname, "_esplight", "_tcp", 80, serviceTxtData2, 1) );
+    ESP_ERROR_CHECK( mdns_service_add(hostname, "_http", "_tcp", 80, serviceTxtData2, 1) );
     free(hostname);
 
     // xTaskCreatePinnedToCore(&i2sTask, "i2s", 3500, NULL, 2 | portPRIVILEGE_BIT, NULL, portNUM_PROCESSORS - 1);

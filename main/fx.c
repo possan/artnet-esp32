@@ -2,25 +2,21 @@
 #include <stdio.h>
 #include <string.h>
 
-uint8_t brightness_at_position(FxLayerSettings *layer, FxSettings *fx, float time, int led, int num_leds, uint8_t *temp) {
+uint8_t brightness_at_position(FxLayerSettings *layer, FxSettings *fx, uint32_t progress, int led, int num_leds, uint8_t *temp) {
 
+    int32_t rep = layer->repeat;
+    if (rep < 1) {
+      rep = 1;
+    }
 
-
-    uint32_t ramp_i =
+    int32_t ramp_i =
       1024*1024 +
       (led * 1024) +
 
+      (progress * num_leds / 1024) +
 
-      ((time * layer->speed_multiplier / 1000) * num_leds * fx->base_speed / 60000) + // base_speed is in rpm * 1000
-
-
-
-      // ((time * layer->speed_multiplier) / 16) +
-
-      ((layer->offset * num_leds * 1024 / layer->repeat) / 100000) // offset is in percent * 1000
+      ((layer->offset * num_leds * 1024 / rep) / 100) // offset is in percent
       ;
-
-    // uint32_t p = (ramp_i >> 10) % (num_leds / layer->repeat);
 
     ramp_i *= layer->repeat;
     ramp_i &= 0xFFFFFFF;
@@ -40,7 +36,9 @@ uint8_t brightness_at_position(FxLayerSettings *layer, FxSettings *fx, float tim
     // return p < layer->size ? 255 : 0;
 }
 
-void fx_render_layer(FxLayerSettings *layer, FxSettings *fx, uint32_t time, uint8_t *rgb, int num_leds, uint8_t *temp, int opacity) {
+void fx_render_layer(FxLayerSettings *layer, FxSettings *fx, uint32_t progress, uint8_t *rgb, int num_leds, uint8_t *temp, int opacity, uint32_t delta_progress) {
+
+    layer->_progress += ((int32_t)delta_progress * layer->speed_multiplier / 1000);
 
     uint16_t finalopacity = (layer->opacity * opacity);
 
@@ -77,12 +75,12 @@ void fx_render_layer(FxLayerSettings *layer, FxSettings *fx, uint32_t time, uint
       o ++;
     }
 
-    // printf("blending layer... %d leds, time %d, color %d %d %d: ", num_leds, time, rr, gg, bb);
+    // printf("blending layer... %d leds, progress %d, color %d %d %d: ", num_leds, progress, rr, gg, bb);
 
     o = 0;
     for(int j=0; j<num_leds; j++) {
 
-      uint16_t x, bri = brightness_at_position(layer, fx, time, j, num_leds, temp);
+      uint16_t x, bri = brightness_at_position(layer, fx, layer->_progress, j, num_leds, temp);
 
       // printf("%3d ", bri);
 
@@ -104,24 +102,27 @@ void fx_render_layer(FxLayerSettings *layer, FxSettings *fx, uint32_t time, uint
       rgb[o] = x;
       o ++;
     }
-    // printf("\n");
+    //  printf("\n");
 }
 
-void fx_render(FxSettings *fx, uint32_t time, uint8_t *rgb, int max_leds, uint8_t *temp) {
+void fx_render(FxSettings *fx, uint32_t time, uint8_t *rgb, int max_leds, uint8_t *temp, uint32_t delta_time) {
     memset(rgb, 0, max_leds * 3);
 
-    uint32_t time2 = time + fx->time_offset;
+    fx->_time += delta_time;
 
-    // printf("rendering... %d leds, time = %d\n", fx->num_leds, time2);
+    uint32_t delta_progress = (delta_time * fx->base_speed * 1024) / 60000;
+    fx->_progress += delta_progress;
+
+    // printf("rendering... %d leds, progress=%d, time=%d\n", fx->num_leds, fx->_progress, fx->_time);
 
     if (fx->opacity < 1) {
         return;
     }
 
-    fx_render_layer(&fx->layer[0], fx, time2, rgb, fx->num_leds, temp, fx->opacity);
-    fx_render_layer(&fx->layer[1], fx, time2, rgb, fx->num_leds, temp, fx->opacity);
-    fx_render_layer(&fx->layer[2], fx, time2, rgb, fx->num_leds, temp, fx->opacity);
-    fx_render_layer(&fx->layer[3], fx, time2, rgb, fx->num_leds, temp, fx->opacity);
+    fx_render_layer(&fx->layer[0], fx, fx->_progress, rgb, fx->num_leds, temp, fx->opacity, delta_progress);
+    fx_render_layer(&fx->layer[1], fx, fx->_progress, rgb, fx->num_leds, temp, fx->opacity, delta_progress);
+    fx_render_layer(&fx->layer[2], fx, fx->_progress, rgb, fx->num_leds, temp, fx->opacity, delta_progress);
+    fx_render_layer(&fx->layer[3], fx, fx->_progress, rgb, fx->num_leds, temp, fx->opacity, delta_progress);
 }
 
 bool fx_set_osc_property(FxSettings *fx, char *addr, uint32_t value) {
@@ -131,6 +132,14 @@ bool fx_set_osc_property(FxSettings *fx, char *addr, uint32_t value) {
     fx->num_leds = value;
     if (debug) {
       printf("Master num leds: %d\n", fx->num_leds);
+    }
+    return true;
+  }
+
+  if (strcmp(addr, "/skip") == 0) {
+    fx->skip_leds = value;
+    if (debug) {
+      printf("Skip leds: %d\n", fx->skip_leds);
     }
     return true;
   }
@@ -163,6 +172,22 @@ bool fx_set_osc_property(FxSettings *fx, char *addr, uint32_t value) {
     fx->base_speed = value;
     if (debug) {
       printf("Base speed: %d\n", fx->base_speed);
+    }
+    return true;
+  }
+
+  if (strcmp(addr, "/testpattern") == 0) {
+    fx->test_pattern = value;
+    if (debug) {
+      printf("Test pattern: %d\n", fx->test_pattern);
+    }
+    return true;
+  }
+
+  if (strcmp(addr, "/artnet") == 0) {
+    fx->artnet_universe = value;
+    if (debug) {
+      printf("Artnet universe: %d\n", fx->artnet_universe);
     }
     return true;
   }
@@ -526,43 +551,42 @@ bool fx_set_osc_property(FxSettings *fx, char *addr, uint32_t value) {
   return false;
 }
 
-void fx_get_layer_config_json(FxLayerSettings *layer, char *destination, uint32_t maxsize) {
-  sprintf(destination, "{"
-    "\"op\":%d,"
-    "\"of\":%d,"
-    "\"r\":%d,"
-    "\"g\":%d,"
-    "\"b\":%d,"
-    "\"siz\":%d,"
-    "\"rep\":%d,"
-    "\"gam\":%d,"
-    "\"spd\":%d,"
-    "\"fe1\":%d,"
-    "\"fe2\":%d"
-    "}",
-    layer->opacity,
-    layer->offset,
-    layer->color[0],
-    layer->color[1],
-    layer->color[2],
-    layer->size,
-    layer->repeat,
-    layer->gamma,
-    layer->speed_multiplier,
-    layer->feather_left,
-    layer->feather_right);
+void fx_get_layer_config_json(FxLayerSettings *layer, int index, char *destination, uint32_t maxsize) {
+  sprintf(destination,
+    "\"layer%d/opacity\":%d,\n"
+    "\"layer%d/offset\":%d,\n"
+    "\"layer%d/red\":%d,\n"
+    "\"layer%d/green\":%d,\n"
+    "\"layer%d/blue\":%d,\n"
+    "\"layer%d/size\":%d,\n"
+    "\"layer%d/repeat\":%d,\n"
+    "\"layer%d/gamma\":%d,\n"
+    "\"layer%d/speed\":%d,\n"
+    "\"layer%d/feather1\":%d,\n"
+    "\"layer%d/feather2\":%d,\n",
+    index, layer->opacity,
+    index, layer->offset,
+    index, layer->color[0],
+    index, layer->color[1],
+    index, layer->color[2],
+    index, layer->size,
+    index, layer->repeat,
+    index, layer->gamma,
+    index, layer->speed_multiplier,
+    index, layer->feather_left,
+    index, layer->feather_right);
 }
 
-void fx_get_config_json(FxSettings *fx, char *destination, uint32_t maxsize) {
+void fx_get_config_json(FxSettings *fx, char *destination, uint32_t maxsize, uint32_t uptime) {
   char l1buf[500];
   char l2buf[500];
   char l3buf[500];
   char l4buf[500];
 
-  fx_get_layer_config_json(&fx->layer[0], &l1buf, 200);
-  fx_get_layer_config_json(&fx->layer[1], &l2buf, 200);
-  fx_get_layer_config_json(&fx->layer[2], &l3buf, 200);
-  fx_get_layer_config_json(&fx->layer[3], &l4buf, 200);
+  fx_get_layer_config_json(&fx->layer[0], 1, &l1buf, 200);
+  fx_get_layer_config_json(&fx->layer[1], 2, &l2buf, 200);
+  fx_get_layer_config_json(&fx->layer[2], 3, &l3buf, 200);
+  fx_get_layer_config_json(&fx->layer[3], 4, &l4buf, 200);
 
   // strcmp(addr, "/length") == 0
   // strcmp(addr, "/nudge") == 0
@@ -570,9 +594,29 @@ void fx_get_config_json(FxSettings *fx, char *destination, uint32_t maxsize) {
   // strcmp(addr, "/pixelorder") == 0
 
   sprintf(destination, "{\n"
-    "\"length\":%d,\"pixelorder\":%d,\"opacity\":%d,\"nudge\":%d,\n,\"basespeed\":%d,\n"
-    "\"layers\":[\n%s,\n%s,\n%s,\n%s\n"
-    "]}",
-    fx->num_leds, fx->pixel_order, fx->opacity, fx->time_offset, fx->base_speed,
-    l1buf, l2buf, l3buf, l4buf);
+    "\"length\":%d,\n"
+    "\"skip\":%d,\n"
+    "\"pixelorder\":%d,\n"
+    "\"opacity\":%d,\n"
+    "\"nudge\":%d,\n"
+    "\"basespeed\":%d,\n"
+    "\"artnet\":%d,\n"
+    "\"testpattern\":%d,\n"
+    "%s\n%s\n%s\n%s\n"
+    "\"_leet\":1337,\n"
+    "\"_uptime\":%d\n"
+    "}",
+    fx->num_leds,
+    fx->skip_leds,
+    fx->pixel_order,
+    fx->opacity,
+    fx->time_offset,
+    fx->base_speed,
+    fx->artnet_universe,
+    fx->test_pattern,
+    l1buf,
+    l2buf,
+    l3buf,
+    l4buf,
+    uptime);
 }
