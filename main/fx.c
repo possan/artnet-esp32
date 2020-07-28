@@ -15,7 +15,7 @@ uint8_t brightness_at_position(FxLayerSettings *layer, FxLayerState *layerState,
 
       (progress * num_leds / 1024) +
 
-      ((layer->offset * num_leds * 1024 / rep) / 100) // offset is in percent
+      ((((layerState->offset_c * num_leds) / 1024) * 1024 / rep) / 100) // offset is in percent
       ;
 
     ramp_i *= layer->repeat;
@@ -38,17 +38,77 @@ uint8_t brightness_at_position(FxLayerSettings *layer, FxLayerState *layerState,
 
 void fx_render_layer(FxLayerSettings *layer, FxLayerState *layerState, Fx *fx, uint32_t progress, uint8_t *rgb, int num_leds, uint8_t *temp, int opacity, uint32_t delta_progress) {
 
-    layerState->_progress += ((int32_t)delta_progress * layer->speed_multiplier / 1000);
+    int32_t d = (layer->color[0] * 1024) - layerState->red_c;
+    int32_t md = 1000;
+    if (d < -md) d = -md;
+    if (d > md) d = md;
+    layerState->red_c += d;
 
-    uint16_t finalopacity = (layer->opacity * opacity);
+    d = (layer->color[1] * 1024) - layerState->green_c;
+    md = 1000;
+    if (d < -md) d = -md;
+    if (d > md) d = md;
+    layerState->green_c += d;
+
+    d = (layer->color[2] * 1024) - layerState->blue_c;
+    md = 1000;
+    if (d < -md) d = -md;
+    if (d > md) d = md;
+    layerState->blue_c += d;
+
+    d = (layer->opacity * 1024) - layerState->opacity_c;
+    md = 500;
+    if (d < -md) d = -md;
+    if (d > md) d = md;
+    layerState->opacity_c += d;
+
+    d = (layer->size * 1024) - layerState->size_c;
+    md = 1000;
+    if (d < -md) d = -md;
+    if (d > md) d = md;
+    layerState->size_c += d;
+
+    d = (layer->feather_left * 1024) - layerState->feather_left_c;
+    md = 1000;
+    if (d < -md) d = -md;
+    if (d > md) d = md;
+    layerState->feather_left_c += d;
+
+    d = (layer->feather_right * 1024) - layerState->feather_right_c;
+    md = 1000;
+    if (d < -md) d = -md;
+    if (d > md) d = md;
+    layerState->feather_right_c += d;
+
+    d = (layer->offset * 1024) - layerState->offset_c;
+    md = 1000;
+    if (d < -md) d = -md;
+    if (d > md) d = md;
+    layerState->offset_c += d;
+
+    d = (layer->speed_multiplier * 1024) - layerState->speed_multiplier_c;
+    md = 1000;
+    if (d < -md) d = -md;
+    if (d > md) d = md;
+    layerState->speed_multiplier_c += d;
+
+    d = (layer->repeat * 1024) - layerState->repeat_c;
+    md = 1000;
+    if (d < -md) d = -md;
+    if (d > md) d = md;
+    layerState->repeat_c += d;
+
+    layerState->_progress += ((int32_t)delta_progress * (layerState->speed_multiplier_c / 1024) / 1000);
+
+    uint16_t finalopacity = ((layerState->opacity_c / 1024) * opacity);
 
     if (finalopacity < 1) {
         return;
     }
 
-    uint32_t rr = (layer->color[0] * finalopacity) / 10000;
-    uint32_t gg = (layer->color[1] * finalopacity) / 10000;
-    uint32_t bb = (layer->color[2] * finalopacity) / 10000;
+    uint32_t rr = ((layerState->red_c / 1024) * finalopacity) / 10000;
+    uint32_t gg = ((layerState->green_c / 1024)  * finalopacity) / 10000;
+    uint32_t bb = ((layerState->blue_c / 1024) * finalopacity) / 10000;
 
     if (rr < 1 && gg < 1 && bb < 1) {
         return;
@@ -59,12 +119,14 @@ void fx_render_layer(FxLayerSettings *layer, FxLayerState *layerState, Fx *fx, u
     memset(temp, 0, num_leds);
 
     // sizes are in percent * 1000
-    int s1 = (layer->feather_left * num_leds) / 100;
-    int s2 = (layer->size * num_leds) / 100;
-    int s3 = (layer->feather_right * num_leds) / 100;
+    int s1 = ((layerState->feather_left_c * num_leds) / 1024) / 100;
+    int s2 = ((layerState->size_c  * num_leds) / 1024) / 100;
+    int s3 = ((layerState->feather_right_c * num_leds) / 1024) / 100;
+    int st = (num_leds / 2) - ((s1 + s2 + s3) / 2);
+    if (st < 0) st = 0; 
 
-    o = 0;
-    for(int j=0; j<num_leds; j++) {
+    o = st;
+    for(int j=0; j<num_leds && o < num_leds; j++) {
       if (j < s1 && s1 > 0) {
         temp[o] = (j * 255) / s1;
       } else if(j < s1 + s2) {
@@ -115,10 +177,22 @@ void fx_render(Fx *fx, uint32_t time, uint8_t *rgb, int max_leds, uint8_t *temp,
 
     // interpolate base speed
     int32_t d = (fx->settings.base_speed * 1024) - fx->state.base_speed_c;
-    int32_t md = 10;
+    int32_t md = 500000;
     if (d < -md) d = -md;
     if (d > md) d = md;
     fx->state.base_speed_c += d;
+
+    d = (fx->settings.opacity * 1024) - fx->state.opacity_c;
+    md = 500;
+    if (d < -md) d = -md;
+    if (d > md) d = md;
+    fx->state.opacity_c += d;
+
+    d = (fx->settings.time_offset * 1024) - fx->state.time_offset_c;
+    md = 1000000;
+    if (d < -md) d = -md;
+    if (d > md) d = md;
+    fx->state.time_offset_c += d;
 
 
 
@@ -129,19 +203,23 @@ void fx_render(Fx *fx, uint32_t time, uint8_t *rgb, int max_leds, uint8_t *temp,
 
     fx->state._time += delta_time;
 
-    uint32_t delta_progress = (delta_time * fx->settings.base_speed * 1024) / 60000;
+    int32_t delta_progress = (delta_time * (fx->state.base_speed_c / 1024) * 1024) / 60000;
     fx->state._progress += delta_progress;
 
     // printf("rendering... %d leds, progress=%d, time=%d\n", fx->num_leds, fx->_progress, fx->_time);
 
-    if (fx->settings.opacity < 1) {
+    int32_t opa = fx->state.opacity_c / 1024;
+
+    if (opa < 1) {
         return;
     }
 
-    fx_render_layer(&fx->settings.layer[0], &fx->state.layer[0], fx, fx->state._progress, rgb, fx->settings.num_leds, temp, fx->settings.opacity, delta_progress);
-    fx_render_layer(&fx->settings.layer[1], &fx->state.layer[1], fx, fx->state._progress, rgb, fx->settings.num_leds, temp, fx->settings.opacity, delta_progress);
-    fx_render_layer(&fx->settings.layer[2], &fx->state.layer[2], fx, fx->state._progress, rgb, fx->settings.num_leds, temp, fx->settings.opacity, delta_progress);
-    fx_render_layer(&fx->settings.layer[3], &fx->state.layer[3], fx, fx->state._progress, rgb, fx->settings.num_leds, temp, fx->settings.opacity, delta_progress);
+    int32_t p2 = fx->state._progress + (fx->state.time_offset_c / 1024);
+
+    fx_render_layer(&fx->settings.layer[0], &fx->state.layer[0], fx, p2, rgb, fx->settings.num_leds, temp, opa, delta_progress);
+    fx_render_layer(&fx->settings.layer[1], &fx->state.layer[1], fx, p2, rgb, fx->settings.num_leds, temp, opa, delta_progress);
+    fx_render_layer(&fx->settings.layer[2], &fx->state.layer[2], fx, p2, rgb, fx->settings.num_leds, temp, opa, delta_progress);
+    fx_render_layer(&fx->settings.layer[3], &fx->state.layer[3], fx, p2, rgb, fx->settings.num_leds, temp, opa, delta_progress);
 }
 
 bool fx_set_osc_property(Fx *fx, char *addr, uint32_t value) {

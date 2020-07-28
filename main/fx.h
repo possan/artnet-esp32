@@ -38,35 +38,35 @@ typedef struct {
     int32_t _time; // local time
     int32_t _progress; // local progress (1024 * 1024)
  
-    // int32_t opacity_c;
-    // int32_t opacity_d;
+    int32_t opacity_c;
+    int32_t opacity_d;
 
-    // int32_t offset_c;
-    // int32_t offset_d;
+    int32_t offset_c;
+    int32_t offset_d;
 
-    // int32_t red_c;
-    // int32_t red_d;
+    int32_t red_c;
+    int32_t red_d;
 
-    // int32_t green_c;
-    // int32_t green_d;
+    int32_t green_c;
+    int32_t green_d;
 
-    // int32_t blue_c;
-    // int32_t blue_d;
+    int32_t blue_c;
+    int32_t blue_d;
 
-    // int32_t size_c;
-    // int32_t size_d;
+    int32_t size_c;
+    int32_t size_d;
 
-    // int32_t feather_left_c;
-    // int32_t feather_left_d;
+    int32_t feather_left_c;
+    int32_t feather_left_d;
 
-    // int32_t feather_right_c;
-    // int32_t feather_right_d;
+    int32_t feather_right_c;
+    int32_t feather_right_d;
 
-    // int32_t speed_multiplier_c;
-    // int32_t speed_multiplier_d;
+    int32_t speed_multiplier_c;
+    int32_t speed_multiplier_d;
 
-    // int32_t repeat_c;
-    // int32_t repeat_d;
+    int32_t repeat_c;
+    int32_t repeat_d;
 } FxLayerState;
 
 typedef struct {
@@ -91,12 +91,13 @@ typedef struct {
     int32_t _progress; // local progress (1024 * 1024)
 
     int32_t base_speed_c;
-    int32_t base_speed_d; // maximum delta per ms
+    int32_t base_speed_d;
 
-    // int32_t opacity_c;
-    // int32_t opacity_d;
-    // int32_t time_offset_c;
-    // int32_t time_offset_d;
+    int32_t opacity_c;
+    int32_t opacity_d;
+
+    int32_t time_offset_c;
+    int32_t time_offset_d;
 
     FxLayerState layer[4];
 } FxVisState;

@@ -948,6 +948,7 @@ static void debugTask(void* pvParameters)
         }
 
         // vTaskGetRunTimeStats((char *)&freertosstats);
+        ESP_LOGI(TAG, "FX: Speed: %d (target %d)", fx.state.base_speed_c / 1024, fx.settings.base_speed);
         // ESP_LOGI(TAG, "FreeRTOS Stats:\n%s", freertosstats);
         ESP_LOGI(TAG, "Artnet stats: %u dmx frames received (%u bytes) over %d ms (~%1.1f fps).", dmxframesreceived, dmxbytesreceived, dmxduration, dmxframerate);
         ESP_LOGI(TAG, "Rendered frames: %u, %d/%d pixels length received, blit time %d ms, frame time %d ms", renderframes, renderlength, MAXPIXELS, rendertime, frametime);
@@ -958,7 +959,7 @@ static void debugTask(void* pvParameters)
         // printf("\n\n\n\n");
 
         taskYIELD();
-        vTaskDelay(2000 / portTICK_RATE_MS);
+        vTaskDelay(1000 / portTICK_RATE_MS);
     }
 }
 
